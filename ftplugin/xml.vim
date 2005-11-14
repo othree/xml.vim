@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/11/10 18:55:30 $
-" Version:      $Revision: 1.2 $
+" Last Change:  $Date: 2005/11/14 08:36:41 $
+" Version:      $Revision: 1.6 $
 " Location:     
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -32,15 +32,52 @@ let b:unmapgt = 'iunmap <buffer> >'
 let b:emptytag = 0
 let b:endtag = 0
 let b:haveTag = 0
+let b:html_mode =(&filetype =~ 'x\+html')&&(!exists ("g:xml_no_html"))
+let b:haveAtt = 0
+let b:lastTag = ""
+let b:lastAtt = ""
+
+
+							 
+
+
+" NewFileXML -> Inserts <?xml?> at top of new file.                  {{{1
+if !exists("*s:NewFileXML")
+function! s:NewFileXML( )
+    " Where is g:did_xhtmlcf_inits defined?
+    if &filetype == 'xml' || 
+			\ (!exists ("g:did_xhtmlcf_inits") &&
+			\ exists ("g:xml_use_xhtml") &&
+			\ (&filetype =~ 'x\+html')
+        if append (0, '<?xml version="1.0"?>')
+            normal! G
+        endif
+    endif
+endfunction
+endif
+
+
+
+" Callback -> Checks for tag callbacks and executes them.            {{{1
+if !exists("*s:Callback")
+function! s:Callback( xml_tag, isHtml )
+    let text = 0
+    if a:isHtml == 1 && exists ("*HtmlAttribCallback")
+        let text = HtmlAttribCallback (a:xml_tag)
+    elseif exists ("*XmlAttribCallback")
+        let text = XmlAttribCallback (a:xml_tag)
+    endif       
+		echo "Callback() ret ". text
+    if text != '0'
+        execute "normal! i " . text ."\<Esc>l"
+    endif
+endfunction
+endif
 
 " SavePos() saves position  in bufferwide variable                        {{{1
 if !exists('*s:SavePos')
 fun! s:SavePos()	
-	let l:restore = 'normal ' . line('.') . 'G0' 
-	if col('.') > 1
-		let l:restore =  l:restore . (col('.')-1) . 'l'
-	en
-	return l:restore
+	retu 'normal '.line('.').'G0'. (col('.') > 1 ? (col('.')-1).'l' : '')
 endf
 en
 
@@ -58,6 +95,7 @@ fun! s:getTagUnderCursor()
 	let b:emptytag = 0
 	let b:endtag = 0
 	let b:haveTag = 0
+	let b:haveAtt = 0
 	
 	"Lets find forward a < or a >.  If we first find a > we might be in a tag.
 	"If we find a < first or nothing we are definitly not in a tag
@@ -81,9 +119,6 @@ fun! s:getTagUnderCursor()
 	el
 		retu b:haveTag
 	en
-	
-	"So we got a '>'! As a result we are now on >
-	"| Now let find a < or a > backwards.
 	
 	if search('[<>]','bW' ) >=0
 		if getline('.')[col('.')-1] == '<'
@@ -112,8 +147,18 @@ fun! s:getTagUnderCursor()
 	"until the first 'space', 'forward slash' or '>' ends de name part.
 	
 	let l:fendname = match(getline('.'), '$\| \|\t\|>',col('.') + b:endtag)
-	let b:tagName = strpart(getline('.'),col('.') + b:endtag, l:fendname - col('.') - b:endtag)
-	"echo "Tag " . b:tagName 
+	let b:tagName = strpart(getline('.'),col('.') + b:endtag, 
+			\ l:fendname - col('.') - b:endtag)
+	"Check if this tag has attributes
+	let l:line = line('.') | let l:col = col('.') 
+	if search(b:tagName . '\(\(\s\|\n\)\+\)*\([^>=]\+=[^>=]\+\)','W') > 0
+    if l:line == line('.') && l:col == (col('.')-1)
+			let b:haveAtt = 1
+		en
+	en
+	"echo 'line '.line('.').','.l:line.' col '.l:col.','.col('.')
+	exe b:gotoOpenTag
+	"echo 'Tag ' . b:tagName . ' attri ' . b:haveAtt
 	retu b:haveTag
 endf
 en
@@ -177,19 +222,39 @@ fun! s:CloseTag()
 	let l:restore =  s:SavePos()
 	let l:multi = 0
 	if col('.') > 1 && getline('.')[col('.')-2] == '>'
-	  let l:multi = 1
-      normal h
-	en
-	
-	if s:getTagUnderCursor()
-		if b:emptytag == 0 && b:endtag == 0
-			if l:multi == 0
-				exe "normal />/\<Cr>a</" . b:tagName . ">\<Esc>F<"
-				startinsert
-				retu
-			el
+    normal h
+		if s:getTagUnderCursor()
+			if b:emptytag == 0 && b:endtag == 0
 				exe "normal />>/e\<Cr>s\<Cr>\<Esc>Ox\<Esc>>>$x"
 				startinsert!
+				retu
+			en
+		en
+	elseif s:getTagUnderCursor()
+		if b:emptytag == 0 && b:endtag == 0
+			if b:html_mode && b:tagName =~?
+				\ '^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
+				if b:haveAtt == 0
+					call s:Callback (b:tagName, b:html_mode)
+				endif
+				if exists ("g:xml_use_xhtml")
+					exe "normal />\<Cr>i/\<Esc>"
+				en
+				if (col('.')+1) == col('$') 
+					startinsert! 
+					retu
+				el
+					normal l
+					startinsert
+					retu
+				en
+			el
+				exe "normal />/\<Cr>"
+				if b:haveAtt == 0
+					call s:Callback (b:tagName, b:html_mode)
+				end
+				exe "normal a</" . b:tagName . ">\<Esc>F<"
+				startinsert
 				retu
 			en
 		en
@@ -210,36 +275,40 @@ en
 " the bottem is done with append!
 if !exists('*s:BlockTag')
 fun! s:BlockTag()
-	let l:newname = inputdialog('Surround block  with : ')
+	let l:newname = inputdialog('Surround block  with : ',b:lastTag)
 	if strlen( l:newname) == 0
 		retu
 	en
-	exe b:unmapgt
+	let b:lastTag =  l:newname
+	let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
+	if strlen(l:newatt)
+		let b:lastAtt = l:newatt
+	en
 	'<
 	if  col("'<") > 1
 		exe 'normal 0'.(col("'<")-1).'l'
 	en
-	exe "normal i\<Cr><".l:newname.">\<Esc>'>"
+	exe "normal! a\<Cr><".l:newname.' '.l:newatt.">\<Esc>'>"
 	if  col("'>") > 1
 		exe 'normal 0'.(col("'>")-1).'l'
 	en
-	exe "normal a\<Cr></".l:newname.">\<Esc>"
+	exe "normal! a\<Cr></".l:newname.">\<Esc>"
 	let l:rep=&report
 	let &report=999999
 	'<+1,'>>
 	let &report= l:rep
-	exe b:mapgt
 endf
 en
-" Change() Only renames the tag                              {{{1
+" Change() Only renames the tag                                         {{{1
 if !exists('*s:Change')
 fun! s:Change()
 	let l:restore = s:SavePos()
 	if s:getTagUnderCursor()
-		let l:newname = inputdialog('Change tag '.b:tagName.' to : ') 
+		let l:newname = inputdialog('Change tag '.b:tagName.' to : ',b:lastTag) 
 		if strlen( l:newname) == 0
 			retu
 		en
+		let b:lastTag =  l:newname
 		if s:getMatch(b:tagName) == 0
 			exe b:gotoCloseTag
 			exe 'normal 2lcw' . l:newname . "\<Esc>"
@@ -298,15 +367,20 @@ en
 if !exists('*s:ChangeWholeTag')
 fun! s:ChangeWholeTag()
 	if s:getTagUnderCursor()
-		let l:newname = inputdialog('Change whole tag '.b:tagName.' to : ')
+		let l:newname = inputdialog('Change whole tag '.b:tagName.' to : ',b:lastTag)
 		if strlen(l:newname) == 0
 			retu
 		en
+		let b:lastTag =  l:newname
+		let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
+		if strlen(l:newatt)
+			let b:lastAtt = l:newatt
+		en
 		if s:getMatch(b:tagName) == 0
 			exe b:gotoCloseTag
-			exe "normal 2lc/>\<Cr>" . l:newname . "\<Esc>"
+			exe "normal 2lc/>\<Cr>".l:newname."\<Esc>"
 			exe b:gotoOpenTag
-			exe "normal lc/>/\<Cr>" . l:newname . "\<Esc>"
+			exe "normal lc/>/\<Cr>".l:newname.' '.l:newatt."\<Esc>"
 		en
 	en
 endf
@@ -373,11 +447,12 @@ fun! s:FoldTagAll()
 	if s:getTagUnderCursor()
 		let l:tname = b:tagName
 	el
-		let l:tname = inputdialog('Surround block  with : ')
+		let l:tname = inputdialog('Surround block  with : ',b:lastTag)
 		if strlen(l:tname) == 0
 			exe l:restore
 			retu
 		en
+		let b:lastTag =  l:tname
 	en
 	normal 1G
 	let l:sea = '<'.l:tname.'[^>]*\(\n[^>]*\)*[^/?]*>'
@@ -425,7 +500,7 @@ endf
 en
 
 
-"
+
 " EndTag() search for open tag and produce endtaf                 {{{1
 if !exists('*s:EndTag')
 fun! s:EndTag()
@@ -453,28 +528,32 @@ fun! s:EndTag()
 endf
 en
 
-" BeforeTag() surrounds the current tag with a new one           {{{1
+" BeforeTag() surrounds the current tag with a new one                   {{{1
 if !exists('*s:BeforeTag')
 fun! s:BeforeTag()
 	let l:restore = s:SavePos()
 	if s:getTagUnderCursor()
-		let l:newname = ('Surround Before Tag '.b:tagName.' with : ')
-		if strlen(l:newname == 0
+		let l:newname =
+			\ inputdialog('Surround Before Tag '.b:tagName.' with : ',b:lastTag)
+		if strlen(l:newname) == 0
 			retu
 			exe  l:restore
 		en
+		let b:lastTag = l:newname
+		let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
+		if strlen(l:newatt)
+			let b:lastAtt = l:newatt
+		en
 		if s:getMatch(b:tagName) == 0
-			exe b:unmapgt
 			exe b:gotoCloseTag
-			exe "normal />\<Cr>a\<Cr></" . l:newname . ">\<Esc>"
+			exe "normal! />\<Cr>a\<Cr></" . l:newname . ">\<Esc>"
 			let l:To = line('.')
 			exe b:gotoOpenTag
-			exe 'normal i<' . l:newname . ">\<Cr>\<Esc>"
+			exe 'normal! i<' . l:newname . ' '.l:newatt.">\<Cr>\<Esc>"
 			let l:rep=&report
 			let &report=999999
 			exe line('.').','.l:To.'>'
 			let &report= l:rep
-			exe b:mapgt
 		en
 	en
 endf
@@ -484,23 +563,27 @@ if !exists('*s:AfterTag')
 fun! s:AfterTag()
 	let l:restore = s:SavePos()
 	if s:getTagUnderCursor()
-		let l:newname = inputdialog('Surround After Tag '.b:tagName.' with : ')
+		let l:newname =
+			\ inputdialog('Add Tag After '.b:tagName.' with : ',b:lastTag)
 		if strlen(l:newname) == 0
 			retu
 			exe  l:restore
 		en
+		let b:lastTag = l:newname
+		let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
+		if strlen(l:newatt)
+			let b:lastAtt = l:newatt
+		en
 		if s:getMatch(b:tagName) == 0
-			exe b:unmapgt
 			exe b:gotoCloseTag
-			exe 'normal i</' . l:newname . ">\<Cr>\<Esc>"
+			exe 'normal! i</' . l:newname . ">\<Cr>\<Esc>"
 			let l:To = line('.')
 			exe b:gotoOpenTag
-			exe "normal />\<Cr>a\<Cr><".l:newname.">\<Esc>"
+			exe "normal! />\<Cr>a\<Cr><".l:newname.' '.l:newatt.">\<Esc>"
 			let l:rep=&report
 			let &report=999999
 			exe line('.').','.l:To.'>'
 			let &report= l:rep
-			exe b:mapgt
 		en
 	en
 endf
@@ -522,7 +605,7 @@ en
 
 
 
-" Section: Doc installation {{{1
+" Section: Doc installation                                                {{{1
 " Function: s:XmlInstallDocumentation(full_name, revision)              {{{2
 "   Install help documentation.
 " Arguments:
@@ -623,12 +706,12 @@ function! s:XmlInstallDocumentation(full_name, revision)
     /^=\{3,}\s\+END_DOC\C/,$ d
 
     " Remove fold marks:
-    % s/{\{3}[1-9]/    /
+    "% s/{\{3}[1-9]/    /
 
     " Add modeline for help doc: the modeline string is mangled intentionally
     " to avoid it be recognized by VIM:
     call append(line('$'), '')
-    call append(line('$'), ' v' . 'im:tw=78:ts=8:ft=help:norl:')
+    call append(line('$'), ' v' . 'im:tw=78:ts=8:fen:fdm=marker:ft=help:norl:')
 
     " Replace revision:
     exe "normal :1,5s/#version#/ v" . a:revision . "/\<CR>"
@@ -646,7 +729,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.2 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.6 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -657,6 +740,7 @@ endif
 
 " Mappings of keys to functions                                      {{{1
 nnoremap <buffer> <LocalLeader>5 :call <SID>Match()<Cr>
+nnoremap <buffer> <LocalLeader>% :call <SID>Match()<Cr>
 nnoremap <buffer> <LocalLeader>c :call <SID>Change()<Cr>
 nnoremap <buffer> <LocalLeader>C :call <SID>ChangeWholeTag()<Cr>
 nnoremap <buffer> <LocalLeader>d :call <SID>Delete()<Cr>
@@ -670,13 +754,20 @@ nnoremap <buffer> <LocalLeader>O :call <SID>BeforeTag()<Cr>
 nnoremap <buffer> <LocalLeader>o :call <SID>AfterTag()<Cr>
 nnoremap <buffer> <LocalLeader>s :call <SID>StartTag()<Cr>
 vnoremap <buffer> <LocalLeader>v <Esc>:call <SID>BlockTag()<Cr>
-
 setlocal matchpairs+=<:>
-inoremap <buffer> > ><Esc>:call <SID>CloseTag()<Cr>
-" Vim settings                              {{{1
-" vim:tw=78:ts=2:norl:
-" vim: set foldmethod=marker  tabstop=2 shiftwidth=2 softtabstop=2 smartindent smarttab  :
-"fileencoding=iso-8859-15 
+
+if !exists("g:xml_tag_completion_map")
+    inoremap <buffer> > ><Esc>:call <SID>CloseTag()<Cr>
+else
+    execute "inoremap <buffer> " . g:xml_tag_completion_map . " ><Esc>:call <SID>CloseTag()<Cr>"
+endif
+
+augroup xml
+    au!
+    au BufNewFile * call <SID>NewFileXML()
+augroup END
+
+
 finish
 
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
@@ -685,7 +776,7 @@ finish
 === START_DOC
 *xml-plugin.txt*  Help edit XML and SGML documents.                  #version#
 
-				   XML Edit {{{2 ~
+				   XML Edit  ~
 
 A filetype plugin to help edit XML and SGML documents.
 
@@ -702,7 +793,7 @@ Sym-link or copy this file to html.vim in your ftplugin directory. To activte
 the script place 'filetype plugin on' in your |.vimrc| file. See |ftplugins|
 for more information on this topic.
 
-Known Bugs {{{2 ~
+Known Bugs {{{1 ~
 
 - < & > marks inside of a CDATA section are interpreted as actual XML tags
   even if unmatched.
@@ -712,46 +803,105 @@ Known Bugs {{{2 ~
   the start tag isn't finished. This is poor XML anyway you should use
   &gt; instead.
 
+
 ------------------------------------------------------------------------------
-							 *xml-plugin-mappings*
-Mappings and their functions {{{2 ~
+                                                         *xml-plugin-settings*
+Options {{{1
+
+(All options must be placed in your |.vimrc| prior to the |ftplugin|
+command.)
+
+xml_tag_completion_map
+	Use this setting to change the default mapping to auto complete a
+	tag. By default typing a literal `>' will cause the tag your editing
+	to auto complete; pressing twice will auto nest the tag. By using
+	this setting the `>' will be a literal `>' and you must use the new
+	mapping to perform auto completion and auto nesting. For example if
+	you wanted Control-L to perform auto completion inmstead of typing a
+	`>' place the following into your .vimrc: >
+            let xml_tag_completion_map = "<C-l>"
+<
+xml_no_auto_nesting (Not Working!!!!!)
+	This turns off the auto nesting feature. After a completion is made
+	and another `>' is typed xml-edit automatically will break the tag
+	accross multiple lines and indent the curser to make creating nested
+	tqags easier. This feature turns it off. Enter the following in your
+	.vimrc: >
+            let xml_no_auto_nesting = 1
+<
+xml_use_xhtml
+	When editing HTML this will auto close the short tags to make valid
+	XML like <hr /> and <br />. Enter the following in your vimrc to
+	turn this option on: >
+            let xml_use_xhtml = 1
+<
+xml_no_html
+	This turns of the support for HTML specific tags. Place this in your
+        .vimrc: >
+            let xml_no_html = 1
+<
+------------------------------------------------------------------------------
+                                                        *xml-plugin-mappings*
+
+Mapings and their functions {{{1
+
+Typing '>' will start the tag closing routine.
+Typing (Where | means cursor position)
+           <para>|
+results in
+           <para>|</para>
+
+Typing
+           <para>>|</para>
+results in
+           <para>
+                |
+           </para>
+typing a lone '>' and no '<' in front of it accepts the '>' (But having
+lone '>' or '<' in a XML file is frown upon except in <!CDATA> sections,
+and that will throw of the plugin!!).
+
+Typing </tag> or <tag/> also results in na expanding. So when editing
+html type <input .... />
+
+The closing routing also ignores DTD tags '<!,,>' and processing
+instructions '<?....?>'. Thus typing these result in no expansion.
+
 
 <LocalLeader> is a setting in VIM that depicts a prefix for scripts and
 plugins to use. By default this is the backslash key `\'. See |mapleader|
 for details.
 
-<LocalLeader>5
-        - Jump to the matching tag.
+<LocalLeader>5  Jump to the matching tag.                           {{{2
+<LocalLeader>%  Jump to the matching tag.   
 
-<LocalLeader>c 
-        - Rename tag
+<LocalLeader>c  Rename tag                                          {{{2
 
-<LocalLeader>C 
-        - Rename tag and remove attributes
+<LocalLeader>C  Rename tag and remove attributes                    {{{2
+		Will ask for attributes
 
-<LocalLeader>d
-        - Deletes the surrounding tags from the cursor.
+<LocalLeader>d  Deletes the surrounding tags from the cursor.       {{{2
             <tag1>outter <tag2>inner text</tag2> text</tag1>
-               ^
+               |
        Turns to: 
             outter <tag2>inner text</tag2> text
-            ^
-<LocalLeader>D
-        - Deletes the tag and it contents and put it in register x.
+            |
+
+<LocalLeader>D  Deletes the tag and it contents                     {{{2
+        - and put it in register x.
             <tag1>outter <tag2>inner text</tag2> text</tag1>
-                           ^
+                           |
        Turns to: 
             <tag1>outter text</tag1>
 
-<LocalLeader>e
+<LocalLeader>e  provide endtag for open tags.                       {{{2
         - provide endtag for open tags. Watch where de cursor is
             <para><listitem>list item content
-                                            ^
+                                            |
         pressing \e twice produces
             <para><listitem>list item content</para></listitem>
 
-<LocalLeader>f 
-        - fold the tag under the cursor
+<LocalLeader>f  fold the tag under the cursor                       {{{2
           <para>
             line 1
             line 2
@@ -761,22 +911,20 @@ for details.
         +--  5 lines: <para>--------------------------
 
 
-<LocalLeader>F 
-      - all tags of name 'tag' will be fold if there isn't a tag under
+<LocalLeader>F  all tags of name 'tag' will be fold.                {{{2
+      - If there isn't a tag under
         the cursor you will be asked for one.
                   
-<LocalLeader>g
-      - Format (Vim's gq function) will make a visual block of tag under
-	cursor and then format using gq
+<LocalLeader>g  Format (Vim's gq function)                          {{{2
+			- will make a visual block of tag under cursor and then format using gq
 
                   
-<LocalLeader>j
-      - Joins two the SAME sections together. The sections must
-	    be next to each other. 
+<LocalLeader>j  Joins two the SAME sections together.               {{{2
+      -  The sections must be next to each other. 
 			<para> This is line 1
 			 of a paragraph. </para>
 			<para> This is line 2
-			^
+			|
 			 of a paragraph. </para>
 		\j produces
 			<para> This is line 1
@@ -784,46 +932,45 @@ for details.
 			 This is line 2
 			 of a paragraph. </para>
 
-<LocalLeader>o 
-      - Insert a tag under the current one (like vim o)
+<LocalLeader>o  Insert a tag under the current one (like vim o)     {{{2
+				You are asked for tag and attributes.
 
         <tag1><tag2><tag3>blaah</tag3></tag2></tag1>
-          ^
+          |
         \o produces
         <tag1>
             <aftertag><tag2><tag3>blaah</tag3></tag2></aftertag>
         </tag1>
     
-<LocalLeader>O 
-     - Insert a tag Above the current one
-
+<LocalLeader>O  Insert a tag Above the current one (like vim O)     {{{2
+				You are asked for tag and attributes.
         <tag1><tag2><tag3>blaah</tag3></tag2></tag1>
-          ^
+          |
     \O produces
         <beforetag>
           <tag1><tag2><tag3>blaah</tag3></tag2></tag1>
         </beforetag>
 
-<LocalLeader>s 
-    - Insert an opening tag for an closing tag. 
+<LocalLeader>s  Insert an opening tag for an closing tag.           {{{2
             list item content</para></listitem>
-            ^
+            |
         pressing \s twice produces
             <para><listitem>list item content</para></listitem>
 
-<LocalLeader>v   (Visual)
-        - Place a custom XML tag to suround the selected text. You
+<LocalLeader>v  Visual) Place a tag around the selected text.       {{{2
+        - You are asked for tag and attributes. You
         need to have selected text in visual mode before you can use this
         mapping. See |visual-mode| for details.
         Be careful where you place the marks.
-        The top uses insert
+        The top uses append
         The bottom uses append
         Useful when marking up a text file
 
 
 === END_DOC
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" Vim settingѕ                                                            {{{1
 " vim:tw=78:ts=2:ft=help:norl:
 " vim: set foldmethod=marker  tabstop=2 shiftwidth=2 softtabstop=2 smartindent smarttab  :
-"fileencoding=iso-8859-15 
+"fileencoding=utf-8
 
