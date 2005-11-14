@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/11/14 08:36:41 $
-" Version:      $Revision: 1.6 $
+" Last Change:  $Date: 2005/11/14 18:21:14 $
+" Version:      $Revision: 1.9 $
 " Location:     
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -11,13 +11,6 @@
 " Credits:      Devin Weaver <vim (at) tritarget.com>  et all
 "               for the original code.  Guo-Peng Wen for the self
 "               install documentation code.
-"               This script only retained the
-"               documentation function. But this was my inspiration.
-"               Unlike Devin's script there is no provision (at the
-"               moment?) for attributes and html editing nor for
-"               globally changing the <localleader>. The attributes
-"               should come from a dtd thingy 'a la mode de' PSGML. A
-"               bit of inspiration came from psgml (Lennart Staflin) to.
 "               
 
 " Only do this when not done yet for this buffer
@@ -27,8 +20,6 @@ endif
 let b:did_ftplugin = 1
 
 " Buffer variables                                                  {{{1
-let b:mapgt   = "inoremap <buffer> > ><Esc>:call <SID>CloseTag()<Cr>"
-let b:unmapgt = 'iunmap <buffer> >'
 let b:emptytag = 0
 let b:endtag = 0
 let b:haveTag = 0
@@ -42,13 +33,13 @@ let b:lastAtt = ""
 
 
 " NewFileXML -> Inserts <?xml?> at top of new file.                  {{{1
-if !exists("*s:NewFileXML")
-function! s:NewFileXML( )
+if !exists("*NewFileXML")
+function! NewFileXML( )
     " Where is g:did_xhtmlcf_inits defined?
     if &filetype == 'xml' || 
 			\ (!exists ("g:did_xhtmlcf_inits") &&
 			\ exists ("g:xml_use_xhtml") &&
-			\ (&filetype =~ 'x\+html')
+			\ (&filetype =~ 'x\+html'))
         if append (0, '<?xml version="1.0"?>')
             normal! G
         endif
@@ -80,6 +71,20 @@ fun! s:SavePos()
 	retu 'normal '.line('.').'G0'. (col('.') > 1 ? (col('.')-1).'l' : '')
 endf
 en
+
+" hasAtt() Looks for open or close tag of tagname               {{{1
+if !exists('*s:hasAtt')
+fun! s:hasAtt()
+	"Check if this open tag has attributes
+	let l:line = line('.') | let l:col = col('.') 
+	if search(b:tagName . '\(\(\s\|\n\)\+\)*\([^>=]\+=[^>=]\+\)','W') > 0
+    if l:line == line('.') && l:col == (col('.')-1)
+			let b:haveAtt = 1
+		en
+	en
+endf
+en
+ 
 
 " getTagUnderCursor()  Is there a tag under the cursor?               {{{1
 " Set bufer wide variable
@@ -149,20 +154,16 @@ fun! s:getTagUnderCursor()
 	let l:fendname = match(getline('.'), '$\| \|\t\|>',col('.') + b:endtag)
 	let b:tagName = strpart(getline('.'),col('.') + b:endtag, 
 			\ l:fendname - col('.') - b:endtag)
-	"Check if this tag has attributes
-	let l:line = line('.') | let l:col = col('.') 
-	if search(b:tagName . '\(\(\s\|\n\)\+\)*\([^>=]\+=[^>=]\+\)','W') > 0
-    if l:line == line('.') && l:col == (col('.')-1)
-			let b:haveAtt = 1
-		en
-	en
-	"echo 'line '.line('.').','.l:line.' col '.l:col.','.col('.')
-	exe b:gotoOpenTag
 	"echo 'Tag ' . b:tagName . ' attri ' . b:haveAtt
+	if b:endtag == 0
+		call s:hasAtt()
+		exe b:gotoOpenTag
+	en
 	retu b:haveTag
 endf
 en
-
+ 
+ 
 " getMatch(tagname) Looks for open or close tag of tagname               {{{1
 " Set bufer wide variable
 "  - b:gotoCloseTag (if the Match tag is one)
@@ -195,6 +196,8 @@ fun! s:getMatch(name)
 	en
 	if b:endtag
 		let b:gotoOpenTag = s:SavePos()
+		call s:hasAtt()
+		exe b:gotoOpenTag
 	el
 		let b:gotoCloseTag = s:SavePos()
 	en
@@ -284,19 +287,25 @@ fun! s:BlockTag()
 	if strlen(l:newatt)
 		let b:lastAtt = l:newatt
 	en
-	'<
-	if  col("'<") > 1
-		exe 'normal 0'.(col("'<")-1).'l'
-	en
-	exe "normal! a\<Cr><".l:newname.' '.l:newatt.">\<Esc>'>"
+	let l:sline = line("'<")
+	let l:eline = line("'>") 
+	'>
 	if  col("'>") > 1
 		exe 'normal 0'.(col("'>")-1).'l'
 	en
-	exe "normal! a\<Cr></".l:newname.">\<Esc>"
-	let l:rep=&report
-	let &report=999999
-	'<+1,'>>
-	let &report= l:rep
+	exe "normal! a\<Cr></".l:newname.">\<Esc>'<"
+	if  col("'<") > 1
+		exe 'normal 0'.(col("'<")-1).'l'
+	en
+	exe "normal! a\<Cr><".l:newname.
+		\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+		\ .">\<Esc>"
+	if l:sline+1 < l:eline
+		let l:rep=&report
+		let &report=999999
+		'<+1,'>>
+		let &report= l:rep
+	en
 endf
 en
 " Change() Only renames the tag                                         {{{1
@@ -380,7 +389,9 @@ fun! s:ChangeWholeTag()
 			exe b:gotoCloseTag
 			exe "normal 2lc/>\<Cr>".l:newname."\<Esc>"
 			exe b:gotoOpenTag
-			exe "normal lc/>/\<Cr>".l:newname.' '.l:newatt."\<Esc>"
+			exe "normal lc/>/\<Cr>".l:newname.
+			\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+			\."\<Esc>"
 		en
 	en
 endf
@@ -459,6 +470,7 @@ fun! s:FoldTagAll()
 	while search(l:sea ,'W') > 0
 		call s:FoldTag()
 	endwhile
+	exe l:restore
 endf
 en
 
@@ -491,9 +503,7 @@ fun! s:StartTag()
 	  let l:fname = match(getline('.'), '$\| \|\t\|/\|>',l:start)
 	  let l:Name = strpart(getline('.'),l:start, l:fname - l:start )
 	  exe l:restore
-	  exe b:unmapgt
-	  exe 'normal i<'. l:Name.">\e"
-	  exe b:mapgt
+	  exe 'normal! i<'. l:Name.">\e"
 	en
 	exe l:restore
 endf
@@ -537,7 +547,6 @@ fun! s:BeforeTag()
 			\ inputdialog('Surround Before Tag '.b:tagName.' with : ',b:lastTag)
 		if strlen(l:newname) == 0
 			retu
-			exe  l:restore
 		en
 		let b:lastTag = l:newname
 		let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
@@ -549,12 +558,15 @@ fun! s:BeforeTag()
 			exe "normal! />\<Cr>a\<Cr></" . l:newname . ">\<Esc>"
 			let l:To = line('.')
 			exe b:gotoOpenTag
-			exe 'normal! i<' . l:newname . ' '.l:newatt.">\<Cr>\<Esc>"
+			exe 'normal! i<' . l:newname . 
+				\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+				\.">\<Cr>\<Esc>"
 			let l:rep=&report
 			let &report=999999
 			exe line('.').','.l:To.'>'
 			let &report= l:rep
 		en
+		exe  l:restore
 	en
 endf
 en
@@ -567,7 +579,6 @@ fun! s:AfterTag()
 			\ inputdialog('Add Tag After '.b:tagName.' with : ',b:lastTag)
 		if strlen(l:newname) == 0
 			retu
-			exe  l:restore
 		en
 		let b:lastTag = l:newname
 		let l:newatt = inputdialog('Attributes for '.l:newname.' : ',b:lastAtt)
@@ -579,13 +590,16 @@ fun! s:AfterTag()
 			exe 'normal! i</' . l:newname . ">\<Cr>\<Esc>"
 			let l:To = line('.')
 			exe b:gotoOpenTag
-			exe "normal! />\<Cr>a\<Cr><".l:newname.' '.l:newatt.">\<Esc>"
+			exe "normal! />\<Cr>a\<Cr><".l:newname.
+				\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+				\.">\<Esc>"
 			let l:rep=&report
 			let &report=999999
 			exe line('.').','.l:To.'>'
 			let &report= l:rep
 		en
 	en
+	exe  l:restore
 endf
 en
 
@@ -603,6 +617,32 @@ fun! s:FormatTag()
 endf
 en
 
+
+
+
+" FormatTagAll() Format all tags of name under the cursor             {{{1
+" If no tag under the cursor it asks for a tag
+if !exists('*s:FormatTagAll')
+fun! s:FormatTagAll()
+	let l:restore = s:SavePos()
+	if s:getTagUnderCursor()
+		let l:tname = b:tagName
+	el
+		let l:tname = inputdialog('Format every tag : ')
+		if strlen(l:tname) == 0
+			exe l:restore
+			retu
+		en
+	en
+	normal 1G
+	let l:sea = '<'.l:tname.'[^>]*\(\n[^>]*\)*[^/?]*>'
+	while search(l:sea ,'W') > 0
+		call s:FormatTag()
+		exe b:gotoCloseTag
+	endwhile
+	exe l:restore
+endf
+en
 
 
 " Section: Doc installation                                                {{{1
@@ -729,7 +769,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.6 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.9 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -749,6 +789,7 @@ nnoremap <buffer> <LocalLeader>e :call <SID>EndTag()<Cr>
 nnoremap <buffer> <LocalLeader>f :call <SID>FoldTag()<Cr>
 nnoremap <buffer> <LocalLeader>F :call <SID>FoldTagAll()<Cr>
 nnoremap <buffer> <LocalLeader>g :call <SID>FormatTag()<Cr>
+nnoremap <buffer> <LocalLeader>G :call <SID>FormatTagAll()<Cr>
 nnoremap <buffer> <LocalLeader>j :call <SID>Join()<Cr>
 nnoremap <buffer> <LocalLeader>O :call <SID>BeforeTag()<Cr>
 nnoremap <buffer> <LocalLeader>o :call <SID>AfterTag()<Cr>
@@ -764,7 +805,7 @@ endif
 
 augroup xml
     au!
-    au BufNewFile * call <SID>NewFileXML()
+    au BufNewFile *.xml call NewFileXML()
 augroup END
 
 
@@ -781,17 +822,25 @@ finish
 A filetype plugin to help edit XML and SGML documents.
 
 This script provides some convenience when editing XML (and some SGML
-including HTML) formated documents. It allows you to jump to the beginning
-or end of the tag block your cursor is in. '%' will jump between '<' and '>'
-within the tag your cursor is in. When in insert mode and you finish a tag
-(pressing '>') the tag will be completed. If you press '>' twice it will
-complete the tag and place the cursor in the middle of the tags on it's own
-line (helps with nested tags).
+including HTML) formated documents. It allows you to jump to the
+beginning or end of the tag block your cursor is in. '%' will jump
+between '<' and '>' within the tag your cursor is in. When in insert
+mode and you finish a tag (pressing '>') the tag will be completed. If
+you press '>' twice it will place the cursor in the middle of the tags
+on it's own line (helps with nested tags).
 
 Usage: Place this file into your ftplugin directory. To add html support
 Sym-link or copy this file to html.vim in your ftplugin directory. To activte
 the script place 'filetype plugin on' in your |.vimrc| file. See |ftplugins|
 for more information on this topic.
+
+If the file edited is of type "html" and "xml_use_html" is  defined then
+the following tags will not auto complete: <img>, <input>, <param>,
+<frame>, <br>, <hr>, <meta>, <link>, <base>, <area>
+        
+If the file edited is of type 'html' and 'xml_use_xhtml' is defined the
+above tags will autocomplete the xml closing staying xhtml compatable.
+ex. <hr> becomes <hr /> (see |xml-plugin-settings|)
 
 Known Bugs {{{1 ~
 
@@ -919,6 +968,11 @@ for details.
 			- will make a visual block of tag under cursor and then format using gq
 
                   
+<LocalLeader>G  Format all tags under cursor (Vim's gq function)    {{{2
+      - If there isn't a tag under
+        the cursor you will be asked for one.
+
+                  
 <LocalLeader>j  Joins two the SAME sections together.               {{{2
       -  The sections must be next to each other. 
 			<para> This is line 1
@@ -966,9 +1020,115 @@ for details.
         The bottom uses append
         Useful when marking up a text file
 
+------------------------------------------------------------------------------
+                                                        *xml-plugin-callbacks*
 
+Callback Functions {{{2 ~
+
+A callback function is a function used to customize features on a per tag
+basis. For example say you wish to have a default set of attributs when you
+type an empty tag like this:
+    You type: <tag>
+    You get:  <tag default="attributes"></tag>
+
+This is for any script programmers who wish to add xml-plugin support to
+there own filetype plugins.
+
+Callback functions recive one attribute variable which is the tag name. The
+all must return either a string or the number zero. If it returns a string
+the plugin will place the string in the proper location. If it is a zero the
+plugin will ignore and continue as if no callback existed.
+
+The following are implemented callback functions:
+
+HtmlAttribCallback
+	This is used to add default attributes to html tag. It is intended
+	for HTML files only.
+
+XmlAttribCallback
+	This is a generic callback for xml tags intended to add attributes.
+
+							     *xml-plugin-html*
+Callback Example {{{2 ~
+
+The following is an example of using XmlAttribCallback in your .vimrc
+>
+        function XmlAttribCallback (xml_tag)
+            if a:xml_tag ==? "my-xml-tag"
+                return "attributes=\"my xml attributes\""
+            else
+                return 0
+            endif
+        endfunction
+<
+The following is a sample html.vim file type plugin you could use:
+>
+  " Vim script file                                       vim600:fdm=marker:
+  " FileType:   HTML
+  " Maintainer: Devin Weaver <vim (at) tritarget.com>
+  " Location:   http://www.vim.org/scripts/script.php?script_id=301
+
+  " This is a wrapper script to add extra html support to xml documents.
+  " Original script can be seen in xml-plugin documentation.
+
+  " Only do this when not done yet for this buffer
+  if exists("b:did_ftplugin")
+    finish
+  endif
+  " Don't set 'b:did_ftplugin = 1' because that is xml.vim's responsability.
+
+  let b:html_mode = 1
+
+  if !exists("*HtmlAttribCallback")
+  function HtmlAttribCallback( xml_tag )
+      if a:xml_tag ==? "table"
+          return "cellpadding=\"0\" cellspacing=\"0\" border=\"0\""
+      elseif a:xml_tag ==? "link"
+          return "href=\"/site.css\" rel=\"StyleSheet\" type=\"text/css\""
+      elseif a:xml_tag ==? "body"
+          return "bgcolor=\"white\""
+      elseif a:xml_tag ==? "frame"
+          return "name=\"NAME\" src=\"/\" scrolling=\"auto\" noresize"
+      elseif a:xml_tag ==? "frameset"
+          return "rows=\"0,*\" cols=\"*,0\" border=\"0\""
+      elseif a:xml_tag ==? "img"
+          return "src=\"\" width=\"0\" height=\"0\" border=\"0\" alt=\"\""
+      elseif a:xml_tag ==? "a"
+          if has("browse")
+	      " Look up a file to fill the href. Used in local relative file
+	      " links. typeing your own href before closing the tag with `>'
+	      " will override this.
+              let cwd = getcwd()
+              let cwd = substitute (cwd, "\\", "/", "g")
+              let href = browse (0, "Link to href...", getcwd(), "")
+              let href = substitute (href, cwd . "/", "", "")
+              let href = substitute (href, " ", "%20", "g")
+          else
+              let href = ""
+          endif
+          return "href=\"" . href . "\""
+      else
+          return 0
+      endif
+  endfunction
+  endif
+
+  " On to loading xml.vim
+  runtime ftplugin/xml.vim
+<
 === END_DOC
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+" v im:tw=78:ts=8:ft=help:norl:
+" vim600: set foldmethod=marker  tabstop=8 shiftwidth=2 softtabstop=2 smartindent smarttab  :
+"fileencoding=iso-8859-15 
+=== END_DOC
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+
+
+
+
+
 " Vim settingѕ                                                            {{{1
 " vim:tw=78:ts=2:ft=help:norl:
 " vim: set foldmethod=marker  tabstop=2 shiftwidth=2 softtabstop=2 smartindent smarttab  :
