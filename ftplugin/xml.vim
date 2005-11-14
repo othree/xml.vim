@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/11/14 18:21:14 $
-" Version:      $Revision: 1.9 $
+" Last Change:  $Date: 2005/11/15 00:50:50 $
+" Version:      $Revision: 1.11 $
 " Location:     
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -11,7 +11,7 @@
 " Credits:      Devin Weaver <vim (at) tritarget.com>  et all
 "               for the original code.  Guo-Peng Wen for the self
 "               install documentation code.
-"               
+"               Bart vam Deenen voor makeElement function
 
 " Only do this when not done yet for this buffer
 if exists("b:did_ftplugin")
@@ -23,11 +23,17 @@ let b:did_ftplugin = 1
 let b:emptytag = 0
 let b:endtag = 0
 let b:haveTag = 0
-let b:html_mode =(&filetype =~ 'x\+html')&&(!exists ("g:xml_no_html"))
+let b:html_mode =(&filetype =~ 'x\?html')&&(!exists ("g:xml_no_html"))
 let b:haveAtt = 0
 let b:lastTag = ""
 let b:lastAtt = ""
-
+let b:suffix = (exists('g:makeElementSuf') ? g:makeElementSuf : ';;')
+let b:xml_use_xhtml = 0
+if exists('g:xml_use_xhtml')
+	let b:xml_use_xhtml = g:xml_use_xhtml
+elseif &filetype == 'xhtml'
+	let b:xml_use_xhtml = 1
+en
 
 							 
 
@@ -38,8 +44,8 @@ function! NewFileXML( )
     " Where is g:did_xhtmlcf_inits defined?
     if &filetype == 'xml' || 
 			\ (!exists ("g:did_xhtmlcf_inits") &&
-			\ exists ("g:xml_use_xhtml") &&
-			\ (&filetype =~ 'x\+html'))
+			\ b:xml_use_xhtml &&
+			\ (&filetype =~ 'x\?html'))
         if append (0, '<?xml version="1.0"?>')
             normal! G
         endif
@@ -70,6 +76,46 @@ if !exists('*s:SavePos')
 fun! s:SavePos()	
 	retu 'normal '.line('.').'G0'. (col('.') > 1 ? (col('.')-1).'l' : '')
 endf
+en
+
+" makeElement() makes the previous woord an tag and close                {{{1
+" Thanks to Bart van Deenen , www.vandeenensupport.com                             
+if !exists('*s:makeElement')
+function! s:makeElement()
+	let b:tagName = @@
+	let b:haveAtt = 0
+	let l:notAlone = (match(getline('.'),'^\s*>\s*$') == -1)
+	exe 'normal! i<p'
+	if b:html_mode && b:tagName =~?
+		\ '^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
+		if b:haveAtt == 0
+			call s:Callback (b:tagName, b:html_mode)
+		endif
+		if b:xml_use_xhtml
+			exe "normal />\<Cr>i/\<Esc>"
+		en
+		if (col('.')+2) == col('$') 
+			startinsert! 
+			retu
+		el
+			normal l
+			startinsert
+			retu
+		en
+	el
+		exe "normal />/\<Cr>"
+		if b:haveAtt == 0
+			call s:Callback (b:tagName, b:html_mode)
+		end
+		if l:notAlone
+			exe "normal! a</" . b:tagName . ">\<Esc>F<"
+			startinsert
+		el
+			exe  'normal! o</pa>Ox>>$x'
+			start!
+		en
+	en
+endfunction
 en
 
 " hasAtt() Looks for open or close tag of tagname               {{{1
@@ -240,7 +286,7 @@ fun! s:CloseTag()
 				if b:haveAtt == 0
 					call s:Callback (b:tagName, b:html_mode)
 				endif
-				if exists ("g:xml_use_xhtml")
+				if b:xml_use_xhtml
 					exe "normal />\<Cr>i/\<Esc>"
 				en
 				if (col('.')+1) == col('$') 
@@ -769,7 +815,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.9 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.11 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -797,6 +843,8 @@ nnoremap <buffer> <LocalLeader>s :call <SID>StartTag()<Cr>
 vnoremap <buffer> <LocalLeader>v <Esc>:call <SID>BlockTag()<Cr>
 setlocal matchpairs+=<:>
 
+setlocal iskeyword=@,48-57,_,192-255,58
+exe 'inoremap <buffer> '.b:suffix. " ><Esc>db:call <SID>makeElement()<Cr>"
 if !exists("g:xml_tag_completion_map")
     inoremap <buffer> > ><Esc>:call <SID>CloseTag()<Cr>
 else
@@ -880,9 +928,14 @@ xml_no_auto_nesting (Not Working!!!!!)
 <
 xml_use_xhtml
 	When editing HTML this will auto close the short tags to make valid
-	XML like <hr /> and <br />. Enter the following in your vimrc to
+	XML like <hr/> and <br/>. Enter the following in your vimrc to
 	turn this option on: >
             let xml_use_xhtml = 1
+	if the filetype is xhtml and g:xml_use_xhtml doesn't exists
+	the script defines it to be 1. (This also assumes that you have linked
+	xml.vim to xhtml.vim. Otherwise this item is moot)
+	For a file to be of xhtml type there need to be a doctype declaration!!
+	just naming a file something.xhtml doesn't make it type xhtml!
 <
 xml_no_html
 	This turns of the support for HTML specific tags. Place this in your
@@ -921,8 +974,20 @@ instructions '<?....?>'. Thus typing these result in no expansion.
 plugins to use. By default this is the backslash key `\'. See |mapleader|
 for details.
 
+;;              make element out previous word and close it         {{{2
+          - when typing a word;; wil create <word>|</word>
+						when word on its own line it will be
+						<word>
+               |
+						</word>
+            the suffix can be changed by setting 
+						let makeElementSuf = ',,,' in your .vimrc
+						Thanks to Bart van Deenen
+						(http://www.vim.org/scripts/script.php?script_id=632)
+						
 <LocalLeader>5  Jump to the matching tag.                           {{{2
 <LocalLeader>%  Jump to the matching tag.   
+
 
 <LocalLeader>c  Rename tag                                          {{{2
 
