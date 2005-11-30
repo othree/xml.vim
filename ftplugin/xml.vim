@@ -2,9 +2,9 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/11/16 09:11:38 $
-" Version:      $Revision: 1.16 $
-" Location:     
+" Last Change:  $Date: 2005/11/30 13:23:10 $
+" Version:      $Revision: 1.27 $
+" 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
 "               License.  See http://www.gnu.org/copyleft/gpl.txt
@@ -13,6 +13,14 @@
 "               install documentation code.
 "               Bart vam Deenen for makeElement function
 
+
+" Observation   - If you want to do something to a match pair most of the time
+"               you must do first the close tag. Because doing first the open
+"               tag could change the close tag position.
+"               - 
+
+
+
 " Only do this when not done yet for this buffer
 if exists("b:did_ftplugin")
   finish
@@ -20,9 +28,8 @@ endif
 let b:did_ftplugin = 1
 
 " Buffer variables                                                  {{{1
-let b:emptytag = 0
+let b:emptyTags='^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
 let b:endtag = 0
-let b:haveTag = 0
 let b:html_mode =((&filetype =~ 'x\?html') && !exists("g:xml_no_html"))
 let b:haveAtt = 0
 let b:lastTag = ""
@@ -64,7 +71,6 @@ function! s:Callback( xml_tag, isHtml )
     elseif exists ("*XmlAttribCallback")
         let text = XmlAttribCallback (a:xml_tag)
     endif       
-		echo "Callback() ret ". text
     if text != '0'
         execute "normal! i " . text ."\<Esc>l"
     endif
@@ -78,45 +84,8 @@ fun! s:SavePos()
 endf
 en
 
-" makeElement() makes the previous woord an tag and close                {{{1
-if !exists('*s:makeElement')
-function! s:makeElement()
-	let b:tagName = @@
-	let b:haveAtt = 0
-	let l:alone = (match(getline('.'),'^\s*>\s*$') >= 0)
-	let l:endOfLine = (match(getline('.'),'\s*>\s*$',col('.')-1) >= 0)
-	normal i<p
-	if b:html_mode && b:tagName =~?
-		\ '^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
-		if b:haveAtt == 0
-			call s:Callback (b:tagName, b:html_mode)
-		endif
-		if b:xml_use_xhtml
-			exe "normal />\<Cr>i/\<Esc>"
-		en
-		if  l:endOfLine
-			start!
-		el
-			normal ll
-			start
-		en
-	el
-		exe "normal />/\<Cr>"
-		if b:haveAtt == 0
-			call s:Callback (b:tagName, b:html_mode)
-		end
-		if l:alone
-			exe 'normal! o</pa>Ox>>$x'
-			start!
-		el
-			exe 'normal! a<pa>F<'
-			start 
-		en
-	en
-endfunction
-en
-
 " hasAtt() Looks for attribute in open tag                           {{{1
+" expect cursor to be on <
 if !exists('*s:hasAtt')
 fun! s:hasAtt()
 	"Check if this open tag has attributes
@@ -130,20 +99,20 @@ endf
 en
  
 
-" getTagUnderCursor()  Is there a tag under the cursor?               {{{1
+" TagUnderCursor()  Is there a tag under the cursor?               {{{1
 " Set bufer wide variable
-"  - b:emptytag
 "  - b:endtag
-"  - b:haveTag
 "  - b:tagName
-"  - b:endcol & b:endline only used by getMatch()
+"  - b:endcol & b:endline only used by Match()
 "  - b:gotoCloseTag (if the tag under the cursor is one)
 "  - b:gotoOpenTag  (if the tag under the cursor is one)
-if !exists('*s:getTagUnderCursor')
-fun! s:getTagUnderCursor()
-	let b:emptytag = 0
+" on exit
+"    - returns 1 (true)  or 0 (false)
+"    - position is at '<'
+if !exists('*s:TagUnderCursor')
+fun! s:TagUnderCursor()
 	let b:endtag = 0
-	let b:haveTag = 0
+	let l:haveTag = 0
 	let b:haveAtt = 0
 	
 	"Lets find forward a < or a >.  If we first find a > we might be in a tag.
@@ -153,20 +122,22 @@ fun! s:getTagUnderCursor()
 		let b:endcol  = col('.')
 		let b:endline = line('.')
 		if getline('.')[col('.')-2] == '/'
-			let b:emptytag = 1
+				"we don't work with empty tags
+			retu l:haveTag
 		en
 	elseif search('[<>]','W') >0
 		if getline('.')[col('.')-1] == '>'
 			let b:endcol  = col('.')
 			let b:endline = line('.')
 			if getline('.')[col('.')-2] == '/'
-				let b:emptytag = 1
+				"we don't work with empty tags
+				retu l:haveTag
 			en
 		el
-			retu b:haveTag
+			retu l:haveTag
 		en
 	el
-		retu b:haveTag
+		retu l:haveTag
 	en
 	
 	if search('[<>]','bW' ) >=0
@@ -177,18 +148,18 @@ fun! s:getTagUnderCursor()
 			elseif getline('.')[col('.')] == '?' ||  getline('.')[col('.')] == '!'
 				"we don't deal with processing instructions or dtd
 				"related definitions
-				retu b:haveTag
+				retu l:haveTag
 			el
 				let b:gotoOpenTag = s:SavePos()
 			en
 		el
-			retu b:haveTag
+			retu l:haveTag
 		en
 	el
-		retu b:haveTag
+		retu l:haveTag
 	en
 
-	let b:haveTag = 1
+	let l:haveTag = 1
 	"we have established that we are between something like
 	"'</\?[^>]*/\?>'
 	"Now lets go for the name part. The namepart are xmlnamechars which
@@ -203,17 +174,20 @@ fun! s:getTagUnderCursor()
 		call s:hasAtt()
 		exe b:gotoOpenTag
 	en
-	retu b:haveTag
+	retu l:haveTag
 endf
 en
  
  
-" getMatch(tagname) Looks for open or close tag of tagname               {{{1
-" Set bufer wide variable
+" Match(tagname) Looks for open or close tag of tagname               {{{1
+" Set buffer wide variable
 "  - b:gotoCloseTag (if the Match tag is one)
 "  - b:gotoOpenTag  (if the Match tag is one)
-if !exists('*s:getMatch')
-fun! s:getMatch(name)
+" on exit
+"    - returns 1 (true) or 0 (false)
+"    - position is at '<'
+if !exists('*s:Match')
+fun! s:Match(name)
 	let l:pat = '</\=' . a:name . '\($\| \|\t\|>\)'
 	if  b:endtag
 		exe b:gotoCloseTag
@@ -245,63 +219,97 @@ fun! s:getMatch(name)
 	el
 		let b:gotoCloseTag = s:SavePos()
 	en
-	retu l:level
+	retu l:level == 0
 endf
 en
 
-" Match()  Match de tagname under de cursor                       {{{1
-if !exists('*s:Match')
-fun! s:Match()	
+" Matches()  Matches de tagname under de cursor                       {{{1
+if !exists('*s:Matches')
+fun! s:Matches()	
 	let l:restore =  s:SavePos()
-	if s:getTagUnderCursor()
-		if s:getMatch(b:tagName)
-			exe l:restore
+	if s:TagUnderCursor()
+		if s:Match(b:tagName)
+			retu
+		en
+	en
+	exe l:restore
+endf
+en
+
+" makeElement() makes the previous woord an tag and close                {{{1
+if !exists('*s:makeElement')
+function! s:makeElement()
+	let b:tagName = @@
+	let b:haveAtt = 0
+	let l:alone = (match(getline('.'),'^\s*>\s*$') >= 0)
+	let l:endOfLine = ((col('.')+1) == col('$'))
+	normal i<pf>
+	if b:html_mode && b:tagName =~? b:emptyTags
+		if b:haveAtt == 0
+			call s:Callback (b:tagName, b:html_mode)
+		endif
+		if b:xml_use_xhtml
+			exe "normal i/\<Esc>l"
+		en
+		if  l:endOfLine
+			start!
+		el
+			normal l
+			start
 		en
 	el
-		exe l:restore
+		if b:haveAtt == 0
+			call s:Callback (b:tagName, b:html_mode)
+		end
+		if l:alone
+			exe 'normal! o</pa>Ox>>$x'
+			start!
+		el
+			exe 'normal! a</pa>F<'
+			start 
+		en
 	en
-endf
+endfunction
 en
 
 " CloseTag() closing the tag which is being typed                  {{{1
 if !exists('*s:CloseTag')
 fun! s:CloseTag()	
 	let l:restore =  s:SavePos()
-	let l:multi = 0
+	let l:endOfLine = ((col('.')+1) == col('$'))
 	if col('.') > 1 && getline('.')[col('.')-2] == '>'
     normal h
-		if s:getTagUnderCursor()
-			if b:emptytag == 0 && b:endtag == 0
+		if s:TagUnderCursor()
+			if b:endtag == 0
 				exe "normal />>/e\<Cr>s\<Cr>\<Esc>Ox\<Esc>>>$x"
-				startinsert!
+				start!
 				retu
 			en
 		en
-	elseif s:getTagUnderCursor()
-		if b:emptytag == 0 && b:endtag == 0
-			if b:html_mode && b:tagName =~?
-				\ '^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
+	elseif s:TagUnderCursor()
+		if b:endtag == 0
+			exe "normal />\<Cr>"
+			if b:html_mode && b:tagName =~?  b:emptyTags
 				if b:haveAtt == 0
 					call s:Callback (b:tagName, b:html_mode)
-				endif
-				if b:xml_use_xhtml
-					exe "normal />\<Cr>i/\<Esc>"
 				en
-				if (col('.')+1) == col('$') 
-					startinsert! 
+				if b:xml_use_xhtml
+					exe "normal i/\<Esc>l"
+				en
+				if l:endOfLine
+					start!
 					retu
 				el
 					normal l
-					startinsert
+					start
 					retu
 				en
 			el
-				exe "normal />/\<Cr>"
 				if b:haveAtt == 0
 					call s:Callback (b:tagName, b:html_mode)
-				end
-				exe "normal a</" . b:tagName . ">\<Esc>F<"
-				startinsert
+				en
+				exe "normal! a</" . b:tagName . ">\<Esc>F<"
+				start
 				retu
 			en
 		en
@@ -321,7 +329,7 @@ en
 " the top    is done with insert!
 " the bottem is done with append!
 if !exists('*s:BlockTag')
-fun! s:BlockTag()
+fun! s:BlockTag(multi)
 	let l:newname = inputdialog('Surround block  with : ',b:lastTag)
 	if strlen( l:newname) == 0
 		retu
@@ -331,38 +339,93 @@ fun! s:BlockTag()
 	if strlen(l:newatt)
 		let b:lastAtt = l:newatt
 	en
-	let l:sline = line("'<")
-	let l:eline = line("'>") 
-	'>
-  if  col("'>") > 1
-          exe 'normal 0'.(col("'>")-1).'l'
-  en
-  exe "normal! a\<Cr></".l:newname.">\<Esc>'<"
-  if  col("'<") > 1
-          exe 'normal 0'.(col("'<")-1).'l'
-  en
-  exe "normal! a\<Cr><".l:newname.
-		\ (strlen(l:newatt) ? ' '.l:newatt : '' )
-		\ .">\<Esc>"
-	if l:sline+1 < l:eline
-		let l:rep=&report
-		let &report=999999
-		'<+1,'>>
-		let &report= l:rep
+
+	"Get at the end of the block
+	if col('.') == col("'<") && line('.') == line("'<")
+		normal gvov
 	en
+	if a:multi
+		exe "normal! a\<Cr></".l:newname.">\<Cr>\<Esc>"
+		let l:eline = line('.')
+		normal gvov
+		if col('.') == col("'>") && line('.') == line("'>")
+			normal gvov
+		en
+		let l:sline = line(".") + 2
+		exe "normal! i\<Cr><".l:newname.
+			\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+			\ .">\<Cr>\<Esc>"
+			let l:rep=&report
+			let &report=999999
+			exe l:sline.','.l:eline.'>'
+			let &report= l:rep
+			exe 'normal '.l:sline.'G0mh'.l:eline."G$v'hgq"
+	el
+		exe "normal! a</".l:newname.">\<Esc>gvov"
+		if col('.') == col("'>") && line('.') == line("'>")
+			normal gvov
+		en
+		exe "normal! i<".l:newname.
+			\ (strlen(l:newatt) ? ' '.l:newatt : '' )
+			\ .">\<Esc>"
+	en
+endf
+en
+" vlistitem() Surround a visual block with a listitem para tag
+" Be carefull where You place the block 
+" the top    is done with insert!
+" the bottem is done with append!
+if !exists('*s:vlistitem')
+fun! s:vlistitem()
+	"Get at the end of the block
+	if col('.') == col("'<") && line('.') == line("'<")
+		normal gvov
+	en
+	exe "normal! a</para>\<Cr></listitem>\<Esc>"
+	let l:eline = line('.')
+	normal gvov
+	if col('.') == col("'>") && line('.') == line("'>")
+		normal gvov
+	en
+	let l:sline = line(".") + 2
+	exe "normal! i\<Cr><listitem>\<Cr>\<Tab><para>"
+	"exe 'normal '.l:sline.'G0mh'.l:eline."G$v'hgq"
+endf
+en
+" BlockWith() Surround a visual block with a open and a close          {{{1
+" Be carefull where You place the block 
+" the top    is done with insert!
+" the bottem is done with append!
+if !exists('*s:BlockWith')
+fun! s:BlockWith(open,close)
+	if col('.') == col("'<") && line('.') == line("'<")
+		normal gvov
+	en
+	exe "normal! a\<Cr>;x\<Esc>0cfx".a:close."\<Cr>\<Esc>"
+	normal gvov
+	exe "normal! i\<Cr>;x\<Esc>0cfx".a:open."\<Cr>\<Esc>"
+endf
+en
+" vlistitem() Surround a visual block with a listitem para tag
+" Be carefull where You place the block 
+" the top    is done with insert!
+" the bottem is done with append!
+if !exists('*s:vlistitem')
+fun! s:vlistitem()
+	call BlockWith("</para>\<Cr></listitem>","\<Cr><listitem>\<Cr>\<Tab><para>")
 endf
 en
 " Change() Only renames the tag                                         {{{1
 if !exists('*s:Change')
 fun! s:Change()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:newname = inputdialog('Change tag '.b:tagName.' to : ',b:lastTag) 
 		if strlen( l:newname) == 0
 			retu
 		en
 		let b:lastTag =  l:newname
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			exe b:gotoCloseTag
 			exe 'normal 2lcw' . l:newname . "\<Esc>"
 			exe b:gotoOpenTag
@@ -376,7 +439,7 @@ en
 if !exists('*s:Join')
 fun! s:Join()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:pat = '<[^?!]\S\+\($\| \|\t\|>\)'
 		let l:flags='W'
 		if  b:endtag == 0
@@ -419,7 +482,7 @@ en
 " ChangeWholeTag() removes attributes and rename tag                     {{{1
 if !exists('*s:ChangeWholeTag')
 fun! s:ChangeWholeTag()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:newname = inputdialog('Change whole tag '.b:tagName.' to : ',b:lastTag)
 		if strlen(l:newname) == 0
 			retu
@@ -429,7 +492,7 @@ fun! s:ChangeWholeTag()
 		if strlen(l:newatt)
 			let b:lastAtt = l:newatt
 		en
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			exe b:gotoCloseTag
 			exe "normal 2lc/>\<Cr>".l:newname."\<Esc>"
 			exe b:gotoOpenTag
@@ -445,8 +508,8 @@ en
 if !exists('*s:Delete')
 fun! s:Delete()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
-		if s:getMatch(b:tagName) == 0
+	if s:TagUnderCursor()
+		if s:Match(b:tagName)
 			let l:DeleteTag  = "normal d/>/e\<Cr>"
 			exe b:gotoCloseTag
 			exe l:DeleteTag
@@ -462,8 +525,8 @@ en
 if !exists('*s:DeleteAll')
 fun! s:DeleteAll()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
-		if s:getMatch(b:tagName) == 0
+	if s:TagUnderCursor()
+		if s:Match(b:tagName)
 			let l:sentinel = 'XmLSeNtInElXmL'
 			let l:len = strlen(l:sentinel)
 			let l:rep=&report
@@ -483,9 +546,9 @@ en
 if !exists('*s:FoldTag')
 fun! s:FoldTag()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 	let l:sline = line('.')
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			if b:endtag
 				exe '.,'.l:sline.'fold'
 			el
@@ -498,15 +561,15 @@ fun! s:FoldTag()
 endf
 en
 
-" FoldTagAll() Fold all tags of name under the cursor             {{{1
+" FoldTagAll() Fold all tags of under the cursor             {{{1
 " If no tag under the cursor it asks for a tag
 if !exists('*s:FoldTagAll')
 fun! s:FoldTagAll()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:tname = b:tagName
 	el
-		let l:tname = inputdialog('Surround block  with : ',b:lastTag)
+		let l:tname = inputdialog('Which tag to fold : ',b:lastTag)
 		if strlen(l:tname) == 0
 			exe l:restore
 			retu
@@ -547,9 +610,12 @@ if !exists('*s:StartTag')
 fun! s:StartTag()
 	let l:restore = s:SavePos()
 	let l:level = 1
-	if col('.') == 1 && getline('.')[col('.')-1] == '<'
-	  if s:getTagUnderCursor()
-	    if b:endtag == 0
+	if getline('.')[col('.')-1] == '<'
+	  if s:TagUnderCursor()
+	    if b:endtag 
+				exe 'normal! i<'. b:tagName.">\eF<"
+				retu
+			el
 	      let l:level = l:level + 1
 	    en
 	  en
@@ -609,7 +675,7 @@ en
 if !exists('*s:BeforeTag')
 fun! s:BeforeTag()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:newname =
 			\ inputdialog('Surround Before Tag '.b:tagName.' with : ',b:lastTag)
 		if strlen(l:newname) == 0
@@ -620,7 +686,7 @@ fun! s:BeforeTag()
 		if strlen(l:newatt)
 			let b:lastAtt = l:newatt
 		en
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			exe b:gotoCloseTag
 			exe "normal! />\<Cr>a\<Cr></" . l:newname . ">\<Esc>"
 			let l:To = line('.')
@@ -641,7 +707,7 @@ en
 if !exists('*s:AfterTag')
 fun! s:AfterTag()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:newname =
 			\ inputdialog('Add Tag After '.b:tagName.' with : ',b:lastTag)
 		if strlen(l:newname) == 0
@@ -652,7 +718,7 @@ fun! s:AfterTag()
 		if strlen(l:newatt)
 			let b:lastAtt = l:newatt
 		en
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			exe b:gotoCloseTag
 			exe 'normal! i</' . l:newname . ">\<Cr>\<Esc>"
 			let l:To = line('.')
@@ -673,9 +739,9 @@ en
 if !exists('*s:ShiftRight')
 fun! s:ShiftRight()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:sline = line('.')
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			let l:eline = line('.')
 			if b:endtag
 				exe l:eline.','.l:sline.'>'
@@ -691,9 +757,9 @@ en
 if !exists('*s:ShiftLeft')
 fun! s:ShiftLeft()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:sline = line('.')
-		if s:getMatch(b:tagName) == 0
+		if s:Match(b:tagName)
 			let l:eline = line('.')
 			if b:endtag
 				exe l:eline.','.l:sline.'<'
@@ -707,8 +773,8 @@ en
 " FormatTag() visual select the block and use gq                    {{{1
 if !exists('*s:FormatTag')
 fun! s:FormatTag()
-	if s:getTagUnderCursor()
-		if s:getMatch(b:tagName) == 0
+	if s:TagUnderCursor()
+		if s:Match(b:tagName)
 			exe b:gotoCloseTag
 			normal hhmh
 			exe b:gotoOpenTag
@@ -726,7 +792,7 @@ en
 if !exists('*s:FormatTagAll')
 fun! s:FormatTagAll()
 	let l:restore = s:SavePos()
-	if s:getTagUnderCursor()
+	if s:TagUnderCursor()
 		let l:tname = b:tagName
 	el
 		let l:tname = inputdialog('Format every tag : ')
@@ -764,6 +830,111 @@ fun! s:FormatTagAll()
 endf
 en
 
+
+" IndentAll() indent all tags multiline                            {{{1
+if !exists('*s:IndentAll')
+fun! s:IndentAll()
+
+	let l:restore = s:SavePos()
+	"shift everything left
+	normal 1G<G<G<G<G<G<GG$
+	if search('<[^!/?][^>]*\(\n[^>]*\)*[^/?]>','w') > 0
+		let l:level = 1
+		exe "normal />\<cr>"
+		if col('.')+1 != col('$')
+			exe "normal a\<Cr>\<Esc>>Gk$"
+		el
+			exe "normal j>Gk$"
+		en
+		while search('<[^!?][^>]*\($\| \|\t\|>\)','W') > 0
+			if getline('.')[col('.')] == '/'
+				if  match(getline('.'),'^\s*</[^>]*>\=.*$') == -1
+					exe "normal i\<Cr>\<Esc>"
+				en
+				exe "normal <G0/>\<Cr>"
+				if col('.')+1 != col('$')
+					exe "normal a\<Cr>\<Esc>0"
+				en
+				let l:level = l:level - 1
+			el
+				if  match(getline('.'),'^\s*</[^>]*>\=\s*$') == -1
+					exe "normal i\<Cr>\<Esc>"
+				en
+				exe "normal />\<cr>"
+				if col('.')+1 != col('$')
+					exe "normal a\<Cr>\<Esc>>Gk$"
+				el
+					exe "normal j>Gk$"
+				en
+				let l:level = l:level + 1
+			en
+		endwhile
+		if l:level 
+			let l:tmp = 
+			\ inputdialog("The tags opening and closing are unbalanced ".l:level)
+		en
+	en
+	exe l:restore
+endf
+en
+
+
+" Menu options: {{{1
+augroup XML_menu_autos
+au!
+autocmd BufLeave,BufWinLeave *
+ \ if &filetype == "xml" ||  &filetype == "html" ||  &filetype == "xhtml" |
+   \ amenu disable Xml |
+   \ amenu disable Xml.* |
+ \ endif
+autocmd BufEnter,BufWinEnter *
+ \ if &filetype == "xml" ||  &filetype == "html" ||  &filetype == "xhtml" |
+   \ amenu enable Xml |
+   \ amenu enable Xml.* |
+ \ endif
+au BufNewFile *
+ \ if &filetype == "xml" ||  &filetype == "html" ||  &filetype == "xhtml" |
+		 \ call NewFileXML() |
+	 \ endif
+augroup END
+if !exists("g:did_xml_menu")
+	let g:did_xml_menu = 1
+	:1011 vmenu <script> &Xml.BlockTag\ multi<Tab>V  <Esc>:call <SID>BlockTag(1)<Cr>
+	vmenu <script> Xml.BlockTag\ inline<Tab>v  <Esc>:call <SID>BlockTag(0)<CR>
+	vmenu <script> Xml.Insert\ listitem<Tab>l <Esc>:call <SID>vlistitem()<CR>
+	vmenu <script> Xml.Comment<Tab>c <Esc>:call <SID>BlockWith('<!--','-->')<Cr>
+	vmenu <script> Xml.Comment\ With\ CData<Tab>c <Esc>:call <SID>BlockWith('<![CDATA[',']]>')<Cr>
+	nmenu <script> Xml.Change<Tab>c  :call <SID>Change()<CR>
+	imenu <script> Xml.Change<Tab>c  <C-C>:call <SID>Change()<CR>
+	nmenu <script> Xml.Change\ Whole\ Tag<Tab>C  :call <SID>ChangeWholeTag()<CR>
+	imenu <script> Xml.Change\ Whole\ Tag<Tab>C  <C-C>:call <SID>ChangeWholeTag()<CR>
+	nmenu <script> Xml.Delete<Tab>d  :call <SID>Delete()<CR>
+	imenu <script> Xml.Delete<Tab>d  <C-C>:call <SID>Delete()<CR>
+	nmenu <script> Xml.DeleteAll<Tab>D  :call <SID>DeleteAll()<CR>
+	imenu <script> Xml.DeleteAll<Tab>D  <C-C>:call <SID>DeleteAll()<CR>
+	nmenu <script> Xml.End\ Tag<Tab>e  :call <SID>EndTag()<CR>
+	imenu <script> Xml.End\ Tag<Tab>e  <C-C>:call <SID>EndTag()<CR>
+	nmenu <script> Xml.Fold\ CData  :?<!\[CDATA\[?,/\]\]>/fo<CR>
+	nmenu <script> Xml.Fold\ Comment  :?<!--?,/-->/fo<CR>
+	nmenu <script> Xml.Fold\ Tag<Tab>f  :call <SID>FoldTag()<CR>
+	nmenu <script> Xml.Fold\ All\ Tags<Tab>F  :call <SID>FoldTagAll()<CR>
+	nmenu <script> Xml.Format\ Tags<Tab>g  :call <SID>FormatTag()<CR>
+	nmenu <script> Xml.Format\ All\ Tags<Tab>G  :call <SID>FormatTagAll()<CR>
+	nmenu <script> Xml.Join<Tab>j  :call <SID>Join()<CR>
+	imenu <script> Xml.Join<Tab>j  <C-C>:call <SID>Join()<CR>
+	nmenu <script> Xml.Open\ After\ Tag<Tab>O  :call <SID>AfterTag()<CR>
+	imenu <script> Xml.Open\ After\ Tag<Tab>O  <C-C>:call <SID>AfterTag()<CR>
+	nmenu <script> Xml.open\ Before\ Tag<Tab>o  :call <SID>BeforeTag()<CR>
+	imenu <script> Xml.open\ Before\ Tag<Tab>o  <C-C>:call <SID>BeforeTag()<CR>
+	nmenu <script> Xml.Match<Tab>5  :call <SID>Matches()<CR>
+	imenu <script> Xml.Match<Tab>5  <C-C>:call <SID>Matches()<CR><C-\><C-G>
+	nmenu <script> Xml.Shift\ Left<Tab><  :call <SID>ShiftLeft()<CR>
+	imenu <script> Xml.Shift\ Left<Tab><  <C-C>:call <SID>ShiftLeft()<CR><C-\><C-G>
+	nmenu <script> Xml.Shift\ Right<Tab>>  :call <SID>ShiftRight()<CR>
+	imenu <script> Xml.Shift\ Right<Tab>>  <C-C>:call <SID>ShiftRight()<CR><C-\><C-G>
+	nmenu <script> Xml.Start\ Tag<Tab>s  :call <SID>StartTag()<CR>
+	imenu <script> Xml.Start\ Tag<Tab>s  <C-C>:call <SID>StartTag()<CR><C-\><C-G>
+en
 
 " Section: Doc installation                                                {{{1
 " Function: s:XmlInstallDocumentation(full_name, revision)              {{{2
@@ -889,7 +1060,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.16 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.27 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -899,8 +1070,8 @@ endif
 
 
 " Mappings of keys to functions                                      {{{1
-nnoremap <silent> <buffer> <LocalLeader>5 :call <SID>Match()<Cr>
-nnoremap <silent> <buffer> <LocalLeader>% :call <SID>Match()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>5 :call <SID>Matches()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>% :call <SID>Matches()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>c :call <SID>Change()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>C :call <SID>ChangeWholeTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>d :call <SID>Delete()<Cr>
@@ -910,16 +1081,21 @@ nnoremap <silent> <buffer> <LocalLeader>f :call <SID>FoldTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>F :call <SID>FoldTagAll()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>g :call <SID>FormatTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>G :call <SID>FormatTagAll()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>I :call <SID>IndentAll()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>j :call <SID>Join()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>O :call <SID>BeforeTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>o :call <SID>AfterTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>s :call <SID>StartTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>> :call <SID>ShiftRight()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>< :call <SID>ShiftLeft()<Cr>
-vnoremap <silent> <buffer> <LocalLeader>v <Esc>:call <SID>BlockTag()<Cr>
+vnoremap <silent> <buffer> <LocalLeader>l <Esc>:call <SID>vlistitem()<Cr>
+vnoremap <silent> <buffer> <LocalLeader>v <Esc>:call <SID>BlockTag(0)<Cr>
+vnoremap <silent> <buffer> <LocalLeader>V <Esc>:call <SID>BlockTag(1)<Cr>
+vnoremap <silent> <buffer> <LocalLeader>c <Esc>:call <SID>BlockWith('<![CDATA[',']]>')<Cr>
+vnoremap <silent> <buffer> <LocalLeader>< <Esc>:call <SID>BlockWith('<!--','-->')<Cr>
 setlocal matchpairs+=<:>
 
-setlocal iskeyword=@,48-57,_,192-255,58
+setlocal iskeyword=@,48-57,_,192-255,58  
 exe 'inoremap <silent> <buffer> '.b:suffix. " ><Esc>db:call <SID>makeElement()<Cr>"
 if !exists("g:xml_tag_completion_map")
     inoremap <silent> <buffer> > ><Esc>:call <SID>CloseTag()<Cr>
@@ -927,15 +1103,11 @@ else
     execute "inoremap <silent> <buffer> " . g:xml_tag_completion_map . " ><Esc>:call <SID>CloseTag()<Cr>"
 endif
 
-augroup xml
-    au!
-    au BufNewFile *.xml call NewFileXML()
-augroup END
 
 
 finish
 
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""/*}}}*/
 " Section: Documentation content                                          {{{1
 """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
 === START_DOC
@@ -1114,6 +1286,25 @@ for details.
         the cursor you will be asked for one.
 
                   
+<LocalLeader>I  Indent all tags     {{{2
+      - will create a multiline layout every opening tag will be shifted out
+				and every closing tag will be shifted in. Be aware that the rendering
+				of the XML through XSLT and/or DSSSL, might be changed by this. For example:
+        
+				<chapter><title>Indent</title><para>The documentation</para></chapter>
+
+			- Becomes
+
+				<chapter>
+					<title>
+						Indent
+					</title>
+					<para>
+						The documentation
+					</para>
+				</chapter>
+
+                  
 <LocalLeader>j  Joins two the SAME sections together.               {{{2
       -  The sections must be next to each other. 
 			<para> This is line 1
@@ -1127,7 +1318,18 @@ for details.
 			 This is line 2
 			 of a paragraph. </para>
 
-<LocalLeader>o  Insert a tag under the current one (like vim o)     {{{2
+<LocalLeader>l  visual surround the block with listitem and para     {{{2 
+				When marking up docbook tekst you have the issue that listitems
+				consist of 2 item. This key combination inserts them both,
+
+        blaah
+          |
+        \l produces
+        <listitem>
+            <para>blaah</para>
+        </listitem>
+    
+<LocalLeader>o  Insert a tag inside the current one (like vim o)     {{{2
 				You are asked for tag and attributes.
 
         <tag1><tag2><tag3>blaah</tag3></tag2></tag1>
@@ -1137,7 +1339,7 @@ for details.
             <aftertag><tag2><tag3>blaah</tag3></tag2></aftertag>
         </tag1>
     
-<LocalLeader>O  Insert a tag Above the current one (like vim O)     {{{2
+<LocalLeader>O  Insert a tag outside the current one (like vim O)     {{{2
 				You are asked for tag and attributes.
         <tag1><tag2><tag3>blaah</tag3></tag2></tag1>
           |
@@ -1156,7 +1358,11 @@ for details.
                 shift everything between the tags 1 shiftwide right
 <LocalLeader><  shift left opening tag and closing tag.           {{{2
                 shift everything between the tags 1 shiftwide left
-<LocalLeader>v  Visual) Place a tag around the selected text.       {{{2
+<LocalLeader>c  Visual Place a CDATA section around the selected text.  {{{2
+			Place Cdata section around the block
+<LocalLeader><  Visual Place a Comment around the selected text.  {{{2
+			Place comment around the block
+<LocalLeader>v  Visual Place a tag around the selected text.       {{{2
         - You are asked for tag and attributes. You
         need to have selected text in visual mode before you can use this
         mapping. See |visual-mode| for details.
@@ -1164,6 +1370,9 @@ for details.
         The top uses append
         The bottom uses append
         Useful when marking up a text file
+
+------------------------------------------------------------------------------
+                                                        *xml-plugin-callbacks*
 
 ------------------------------------------------------------------------------
                                                         *xml-plugin-callbacks*
