@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/11/30 13:23:10 $
-" Version:      $Revision: 1.27 $
+" Last Change:  $Date: 2005/12/08 21:36:32 $
+" Version:      $Revision: 1.28 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -17,7 +17,6 @@
 " Observation   - If you want to do something to a match pair most of the time
 "               you must do first the close tag. Because doing first the open
 "               tag could change the close tag position.
-"               - 
 
 
 
@@ -27,9 +26,41 @@ if exists("b:did_ftplugin")
 endif
 let b:did_ftplugin = 1
 
+setlocal commentstring=<!--%s-->
+
+" XML:  thanks to Johannes Zellner and Akbar Ibrahim
+" - case sensitive
+" - don't match empty tags <fred/>
+" - match <!--, --> style comments (but not --, --)
+" - match <!, > inlined dtd's. This is not perfect, as it
+"   gets confused for example by
+"       <!ENTITY gt ">">
+if exists("loaded_matchit")
+    let b:match_ignorecase=0
+    let b:match_words =
+     \  '<:>,' .
+     \  '<\@<=!\[CDATA\[:]]>,'.
+     \  '<\@<=!--:-->,'.
+     \  '<\@<=?\k\+:?>,'.
+     \  '<\@<=\([^ \t>/]\+\)\%(\s\+[^>]*\%([^/]>\|$\)\|>\|$\):<\@<=/\1>,'.
+     \  '<\@<=\%([^ \t>/]\+\)\%(\s\+[^/>]*\|$\):/>'
+endif
+
+" Script rgular expresion used. Documents those nasty criters      {{{1
+let s:NoSlashBeforeGt = '\(\/\)\@\<!>'
+" Don't check for quotes around attributes!!!
+let s:Attrib =  '\(\(\s\|\n\)\+\([^>= \t]\+=[^>=]\+\)\(\s\|\n\)*\)' 
+let s:OptAttrib = s:Attrib . '*'. s:NoSlashBeforeGt
+let s:ReqAttrib = s:Attrib . '\+'. s:NoSlashBeforeGt
+let s:OpenTag = '<[^!/?][^>]*' . s:OptAttrib
+let s:OpenOrCloseTag = '<[^!?][^>]*'. s:OptAttrib
+let s:CloseTag = '<\/[^>]*'. s:OptAttrib
+let s:SpaceInfront = '^\s*<'
+let s:EndofName = '\($\|\s\|>\)'
+
 " Buffer variables                                                  {{{1
 let b:emptyTags='^\(img\|input\|param\|frame\|br\|hr\|meta\|link\|base\|area\)$'
-let b:endtag = 0
+let b:firstWasEndTag = 0
 let b:html_mode =((&filetype =~ 'x\?html') && !exists("g:xml_no_html"))
 let b:haveAtt = 0
 let b:lastTag = ""
@@ -84,13 +115,37 @@ fun! s:SavePos()
 endf
 en
 
+" findOpenTag()                         {{{1
+if !exists('*s:findOpenTag')
+fun! s:findOpenTag(flag)	
+	call search(s:OpenTag,a:flag)
+endf
+en
+
+" findCloseTag()                         {{{1
+if !exists('*s:findCloseTag')
+fun! s:findCloseTag(flag)	
+	call search(s:CloseTag,a:flag)
+endf
+en
+
+" GetTagName() Gets the tagname from start position                     {{{1
+"Now lets go for the name part. The namepart are xmlnamechars which
+"is quite a big range. We assume that everything after '<' or '</' 
+"until the first 'space', 'forward slash' or '>' ends de name part.
+if !exists('*s:GetTagName')
+fun! s:GetTagName(begin)
+	  let l:end = match(getline('.'), s:EndofName,a:begin)
+	  return strpart(getline('.'),a:begin, l:end - a:begin )
+endf
+en
 " hasAtt() Looks for attribute in open tag                           {{{1
 " expect cursor to be on <
 if !exists('*s:hasAtt')
 fun! s:hasAtt()
 	"Check if this open tag has attributes
 	let l:line = line('.') | let l:col = col('.') 
-	if search(b:tagName . '\(\(\s\|\n\)\+\)*\([^>=]\+=[^>=]\+\)','W') > 0
+	if search(b:tagName . s:ReqAttrib,'W') > 0
     if l:line == line('.') && l:col == (col('.')-1)
 			let b:haveAtt = 1
 		en
@@ -101,7 +156,7 @@ en
 
 " TagUnderCursor()  Is there a tag under the cursor?               {{{1
 " Set bufer wide variable
-"  - b:endtag
+"  - b:firstWasEndTag
 "  - b:tagName
 "  - b:endcol & b:endline only used by Match()
 "  - b:gotoCloseTag (if the tag under the cursor is one)
@@ -111,7 +166,7 @@ en
 "    - position is at '<'
 if !exists('*s:TagUnderCursor')
 fun! s:TagUnderCursor()
-	let b:endtag = 0
+	let b:firstWasEndTag = 0
 	let l:haveTag = 0
 	let b:haveAtt = 0
 	
@@ -143,7 +198,7 @@ fun! s:TagUnderCursor()
 	if search('[<>]','bW' ) >=0
 		if getline('.')[col('.')-1] == '<'
 			if getline('.')[col('.')] == '/'
-				let b:endtag = 1
+				let b:firstWasEndTag = 1
 				let b:gotoCloseTag = s:SavePos()
 			elseif getline('.')[col('.')] == '?' ||  getline('.')[col('.')] == '!'
 				"we don't deal with processing instructions or dtd
@@ -161,16 +216,11 @@ fun! s:TagUnderCursor()
 
 	let l:haveTag = 1
 	"we have established that we are between something like
-	"'</\?[^>]*/\?>'
-	"Now lets go for the name part. The namepart are xmlnamechars which
-	"is quite a big range. We assume that everything after '<' or '</' 
-	"until the first 'space', 'forward slash' or '>' ends de name part.
+	"'</\?[^>]*>'
 	
-	let l:fendname = match(getline('.'), '$\| \|\t\|>',col('.') + b:endtag)
-	let b:tagName = strpart(getline('.'),col('.') + b:endtag, 
-			\ l:fendname - col('.') - b:endtag)
-	"echo 'Tag ' . b:tagName . ' attri ' . b:haveAtt
-	if b:endtag == 0
+	let b:tagName = s:GetTagName(col('.') + b:firstWasEndTag)
+	"echo 'Tag ' . b:tagName 
+	if b:firstWasEndTag == 0
 		call s:hasAtt()
 		exe b:gotoOpenTag
 	en
@@ -188,8 +238,8 @@ en
 "    - position is at '<'
 if !exists('*s:Match')
 fun! s:Match(name)
-	let l:pat = '</\=' . a:name . '\($\| \|\t\|>\)'
-	if  b:endtag
+	let l:pat = '</\=' . a:name . s:OptAttrib
+	if  b:firstWasEndTag
 		exe b:gotoCloseTag
 		let l:flags='bW'
 		let l:level = -1
@@ -198,21 +248,14 @@ fun! s:Match(name)
 		let l:flags='W'
 		let l:level = 1
 	en
-	while search(l:pat,l:flags) > 0
-		if  getline('.')[col('.')] == '/'
-			let l:level = l:level - 1
-		el
-			let l:level = l:level + 1
-		en
-		if l:level == 0
-			break
-		en
+	while l:level &&  search(l:pat,l:flags) > 0
+		let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 	endwhile
 	if l:level
 		echo "no matching tag!!!!!"
 		retu l:level
 	en
-	if b:endtag
+	if b:firstWasEndTag
 		let b:gotoOpenTag = s:SavePos()
 		call s:hasAtt()
 		exe b:gotoOpenTag
@@ -231,6 +274,27 @@ fun! s:Matches()
 		if s:Match(b:tagName)
 			retu
 		en
+	en
+	exe l:restore
+endf
+en
+
+" MatchesVisual()  Matches de tagname under de cursor                       {{{1
+if !exists('*s:MatchesVisual')
+fun! s:MatchesVisual()	
+	let l:restore =  s:SavePos()
+	if s:TagUnderCursor()
+		if b:firstWasEndTag
+			normal f>
+		en
+		normal gv
+		if s:Match(b:tagName)
+			if b:firstWasEndTag == 0
+				normal f>
+			en 
+			retu
+		en
+		normal v
 	en
 	exe l:restore
 endf
@@ -278,16 +342,20 @@ fun! s:CloseTag()
 	let l:restore =  s:SavePos()
 	let l:endOfLine = ((col('.')+1) == col('$'))
 	if col('.') > 1 && getline('.')[col('.')-2] == '>'
+	"Multiline request. <t>></t> -->
+	"<t>
+	"	    cursor comes here
+	"</t>
     normal h
 		if s:TagUnderCursor()
-			if b:endtag == 0
-				exe "normal />>/e\<Cr>s\<Cr>\<Esc>Ox\<Esc>>>$x"
+			if b:firstWasEndTag == 0
+				exe "normal 2f>s\<Cr>\<Esc>Ox\<Esc>>>$x"
 				start!
 				retu
 			en
 		en
 	elseif s:TagUnderCursor()
-		if b:endtag == 0
+		if b:firstWasEndTag == 0
 			exe "normal />\<Cr>"
 			if b:html_mode && b:tagName =~?  b:emptyTags
 				if b:haveAtt == 0
@@ -371,27 +439,6 @@ fun! s:BlockTag(multi)
 	en
 endf
 en
-" vlistitem() Surround a visual block with a listitem para tag
-" Be carefull where You place the block 
-" the top    is done with insert!
-" the bottem is done with append!
-if !exists('*s:vlistitem')
-fun! s:vlistitem()
-	"Get at the end of the block
-	if col('.') == col("'<") && line('.') == line("'<")
-		normal gvov
-	en
-	exe "normal! a</para>\<Cr></listitem>\<Esc>"
-	let l:eline = line('.')
-	normal gvov
-	if col('.') == col("'>") && line('.') == line("'>")
-		normal gvov
-	en
-	let l:sline = line(".") + 2
-	exe "normal! i\<Cr><listitem>\<Cr>\<Tab><para>"
-	"exe 'normal '.l:sline.'G0mh'.l:eline."G$v'hgq"
-endf
-en
 " BlockWith() Surround a visual block with a open and a close          {{{1
 " Be carefull where You place the block 
 " the top    is done with insert!
@@ -406,13 +453,19 @@ fun! s:BlockWith(open,close)
 	exe "normal! i\<Cr>;x\<Esc>0cfx".a:open."\<Cr>\<Esc>"
 endf
 en
-" vlistitem() Surround a visual block with a listitem para tag
+" vlistitem() Surround a visual block with a listitem para tag      {{{1
 " Be carefull where You place the block 
 " the top    is done with insert!
 " the bottem is done with append!
 if !exists('*s:vlistitem')
 fun! s:vlistitem()
-	call BlockWith("</para>\<Cr></listitem>","\<Cr><listitem>\<Cr>\<Tab><para>")
+	"Get at the end of the block
+	if col('.') == col("'<") && line('.') == line("'<")
+		normal gvov
+	en
+	exe "normal! a</para>\<Cr></listitem>\<Esc>mh"
+	normal gvov
+	exe "normal! i\<Cr><listitem>\<Cr>\<Tab><para>\<Esc>'h/listitem>/e+1\<Cr>"
 endf
 en
 " Change() Only renames the tag                                         {{{1
@@ -442,13 +495,13 @@ fun! s:Join()
 	if s:TagUnderCursor()
 		let l:pat = '<[^?!]\S\+\($\| \|\t\|>\)'
 		let l:flags='W'
-		if  b:endtag == 0
+		if  b:firstWasEndTag == 0
 			let l:flags='Wb'
 		en
-		if search(l:pat,l:flags) > 0
+		if search(s:OpenOrCloseTag,l:flags) > 0
 
 			let l:secondChar = getline('.')[col('.')]
-			if l:secondChar == '/' && b:endtag ||l:secondChar != '/' && !b:endtag
+			if l:secondChar == '/' && b:firstWasEndTag ||l:secondChar != '/' && !b:firstWasEndTag
 				exe l:restore
 				retu
 			en
@@ -456,13 +509,9 @@ fun! s:Join()
 			if l:secondChar == '/'
 				let l:end = 1
 			en
-			let l:offset = match(getline('.'),
-							\ '$\| \|\t\|>',col('.')+l:end )
-			let l:name = strpart(getline('.'),col('.')+l:end ,
-						\ l:offset - col('.') - l:end)
-			echo 'name = '.l:name. ' Tag '.b:tagName
+			let l:name = s:GetTagName(col('.') + l:end)
 			if l:name == b:tagName
-				if b:endtag
+				if b:firstWasEndTag
 					let b:gotoOpenTag = s:SavePos()
 				el
 					let b:gotoCloseTag = s:SavePos()
@@ -541,7 +590,7 @@ fun! s:DeleteAll()
 	en
 endf
 en
-
+"
 " FoldTag() Fold the tag under the cursor                           {{{1
 if !exists('*s:FoldTag')
 fun! s:FoldTag()
@@ -549,7 +598,7 @@ fun! s:FoldTag()
 	if s:TagUnderCursor()
 	let l:sline = line('.')
 		if s:Match(b:tagName)
-			if b:endtag
+			if b:firstWasEndTag
 				exe '.,'.l:sline.'fold'
 			el
 				exe l:sline.',.fold'
@@ -578,19 +627,12 @@ fun! s:FoldTagAll()
 	en
 	normal G$
 	let l:flag='w'
-	while search('<'.l:tname.'[^>]*\(\n[^>]*\)*[^/?]*>',l:flag) > 0
+	while search('<'.l:tname.s:OptAttrib,l:flag) > 0
 		let l:flag='W'
 		let l:sline = line('.')
 		let l:level = 1
-		while search('</\='.l:tname.'\($\| \|\t\|>\)','W') > 0
-			if  getline('.')[col('.')] == '/'
-				let l:level = l:level - 1
-			el
-				let l:level = l:level + 1
-			en
-			if l:level == 0
-				break
-			en
+		while l:level && search('</\='.l:tname.s:OptAttrib,'W') > 0
+			let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 		endwhile
 		if l:level == 0
 			exe l:sline.',.fold'
@@ -612,31 +654,22 @@ fun! s:StartTag()
 	let l:level = 1
 	if getline('.')[col('.')-1] == '<'
 	  if s:TagUnderCursor()
-	    if b:endtag 
-				exe 'normal! i<'. b:tagName.">\eF<"
+	    if b:firstWasEndTag 
+				exe 'normal! i<'. b:tagName.">\<Esc>F<"
 				retu
 			el
 	      let l:level = l:level + 1
 	    en
-	  en
+		en
 	  exe l:restore
 	en
-	while search('<[^?!][^>]\+\(\n[^>]*\)*[^/?]>','W') > 0
-		if getline('.')[col('.')] == '/' 
-			let l:level = l:level - 1
-		el
-			let l:level = l:level + 1
-		en
-		if l:level == 0
-			break
-		en
+	while l:level && search(s:OpenOrCloseTag ,'W') > 0 
+		let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 	endwhile
 	if l:level == 0
-	  let l:start = col('.')+1
-	  let l:fname = match(getline('.'), '$\| \|\t\|/\|>',l:start)
-	  let l:Name = strpart(getline('.'),l:start, l:fname - l:start )
+	  let l:Name = s:GetTagName(col('.') + 1)
 	  exe l:restore
-	  exe 'normal! i<'. l:Name.">\e"
+	  exe 'normal! i<'. l:Name.">\<Esc>"
 	en
 	exe l:restore
 endf
@@ -649,20 +682,11 @@ if !exists('*s:EndTag')
 fun! s:EndTag()
 	let l:restore = s:SavePos()
 	let l:level = -1
-	while search('<[^?!][^>]\+\(\n[^>]*\)*[^/?]>','bW') > 0
-		if getline('.')[col('.')] == '/' 
-			let l:level = l:level - 1
-		el
-			let l:level = l:level + 1
-		en
-		if l:level == 0
-			break
-		en
+	while l:level && search(s:OpenOrCloseTag,'bW') > 0
+		let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 	endwhile
 	if l:level == 0
-	  let l:start = col('.')
-	  let l:fname = match(getline('.'), '$\| \|\t\|/\|>',l:start)
-	  let l:Name = strpart(getline('.'),l:start, l:fname - l:start )
+	  let l:Name = s:GetTagName(col('.'))
 	  exe  l:restore
 	  exe 'normal a</'. l:Name.">\e"
 	el
@@ -670,6 +694,7 @@ fun! s:EndTag()
 	en
 endf
 en
+
 
 " BeforeTag() surrounds the current tag with a new one                   {{{1
 if !exists('*s:BeforeTag')
@@ -743,7 +768,7 @@ fun! s:ShiftRight()
 		let l:sline = line('.')
 		if s:Match(b:tagName)
 			let l:eline = line('.')
-			if b:endtag
+			if b:firstWasEndTag
 				exe l:eline.','.l:sline.'>'
 			el
 				exe l:sline.','.l:eline.'>'
@@ -761,7 +786,7 @@ fun! s:ShiftLeft()
 		let l:sline = line('.')
 		if s:Match(b:tagName)
 			let l:eline = line('.')
-			if b:endtag
+			if b:firstWasEndTag
 				exe l:eline.','.l:sline.'<'
 			el
 				exe l:sline.','.l:eline.'<'
@@ -803,20 +828,13 @@ fun! s:FormatTagAll()
 	en
 	normal G$
 	let l:flag = 'w'
-	while search('<'.l:tname.'[^>]*\(\n[^>]*\)*[^/?]*>',l:flag) > 0
+	while search('<'.l:tname . s:OptAttrib, l:flag) > 0
 		let l:flag = 'W'
 		let l:sline = line('.')
 		let l:level = 1
 		exe "normal />/e+1\<cr>mh"
-		while search('</\='.l:tname.'\($\| \|\t\|>\)','W') > 0
-			if  getline('.')[col('.')] == '/'
-				let l:level = l:level - 1
-			el
-				let l:level = l:level + 1
-			en
-			if l:level == 0
-				break
-			en
+		while l:level &&  search('</\='.l:tname . s:EndofName,'W') > 0
+			let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 		endwhile
 		if l:level == 0
 			normal hv'hogq
@@ -836,36 +854,42 @@ if !exists('*s:IndentAll')
 fun! s:IndentAll()
 
 	let l:restore = s:SavePos()
+			let l:rep=&report
+			let &report=999999
 	"shift everything left
 	normal 1G<G<G<G<G<G<GG$
-	if search('<[^!/?][^>]*\(\n[^>]*\)*[^/?]>','w') > 0
+	if search(s:OpenTag,'w') > 0
 		let l:level = 1
-		exe "normal />\<cr>"
+		normal f>
+		"if there is something after the tag move that to the next line
 		if col('.')+1 != col('$')
-			exe "normal a\<Cr>\<Esc>>Gk$"
+			echo "after tag".line('.')
+			exe "normal a\<Cr>\<Esc>"
 		el
-			exe "normal j>Gk$"
+			normal j
 		en
-		while search('<[^!?][^>]*\($\| \|\t\|>\)','W') > 0
+		normal >Gk$
+		while search(s:OpenOrCloseTag,'W') > 0
+			"if there is text before the tag then move the tag to the next line
+			if  match(getline('.'),s:SpaceInfront) == -1
+				exe "normal i\<Cr>\<Esc>l"
+			en
 			if getline('.')[col('.')] == '/'
-				if  match(getline('.'),'^\s*</[^>]*>\=.*$') == -1
-					exe "normal i\<Cr>\<Esc>"
-				en
-				exe "normal <G0/>\<Cr>"
+				normal <G0f>
+				"if there is something after the tag move that to the next line
 				if col('.')+1 != col('$')
-					exe "normal a\<Cr>\<Esc>0"
+					exe "normal a\<Cr>\<Esc>"
 				en
 				let l:level = l:level - 1
 			el
-				if  match(getline('.'),'^\s*</[^>]*>\=\s*$') == -1
-					exe "normal i\<Cr>\<Esc>"
-				en
-				exe "normal />\<cr>"
+				normal f>
+				"if there is something after the tag move that to the next line
 				if col('.')+1 != col('$')
-					exe "normal a\<Cr>\<Esc>>Gk$"
+					exe "normal a\<Cr>\<Esc>"
 				el
-					exe "normal j>Gk$"
+					normal j0
 				en
+				normal >Gk$
 				let l:level = l:level + 1
 			en
 		endwhile
@@ -875,6 +899,7 @@ fun! s:IndentAll()
 		en
 	en
 	exe l:restore
+	let &report= l:rep
 endf
 en
 
@@ -1060,7 +1085,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.27 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.28 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -1071,7 +1096,9 @@ endif
 
 " Mappings of keys to functions                                      {{{1
 nnoremap <silent> <buffer> <LocalLeader>5 :call <SID>Matches()<Cr>
+vnoremap <silent> <buffer> <LocalLeader>5 <Esc>:call <SID>MatchesVisual()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>% :call <SID>Matches()<Cr>
+vnoremap <silent> <buffer> <LocalLeader>% <Esc>:call <SID>MatchesVisual()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>c :call <SID>Change()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>C :call <SID>ChangeWholeTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>d :call <SID>Delete()<Cr>
@@ -1093,7 +1120,17 @@ vnoremap <silent> <buffer> <LocalLeader>v <Esc>:call <SID>BlockTag(0)<Cr>
 vnoremap <silent> <buffer> <LocalLeader>V <Esc>:call <SID>BlockTag(1)<Cr>
 vnoremap <silent> <buffer> <LocalLeader>c <Esc>:call <SID>BlockWith('<![CDATA[',']]>')<Cr>
 vnoremap <silent> <buffer> <LocalLeader>< <Esc>:call <SID>BlockWith('<!--','-->')<Cr>
-setlocal matchpairs+=<:>
+
+" Move around functions.
+noremap <silent><buffer> [[ m':call <SID>findOpenTag("bW")<CR>
+noremap <silent><buffer> ]] m':call <SID>findOpenTag( "W")<CR>
+noremap <silent><buffer> [] m':call <SID>findCloseTag( "bW")<CR>
+noremap <silent><buffer> ][ m':call <SID>findCloseTag( "W")<CR>
+
+" Move around comments
+noremap <silent><buffer> ]" :call search('^\(\s*<!--.*\n\)\@<!\(\s*-->\)', "W")<CR>
+noremap <silent><buffer> [" :call search('\%(^\s*<!--.*\n\)\%(^\s*-->\)\@!', "bW")<CR>
+
 
 setlocal iskeyword=@,48-57,_,192-255,58  
 exe 'inoremap <silent> <buffer> '.b:suffix. " ><Esc>db:call <SID>makeElement()<Cr>"
@@ -1233,6 +1270,13 @@ for details.
 						Thanks to Bart van Deenen
 						(http://www.vim.org/scripts/script.php?script_id=632)
 						
+[ and ] mappings                            {{{2
+          [[        Goto to the previous open tag 
+          [[        Goto to the next open tag 
+          []        Goto to the previous close tag 
+          ][        Goto to the next  close tag 
+          ["        Goto to the next  comment
+          ]"        Goto the previous comment
 <LocalLeader>5  Jump to the matching tag.                           {{{2
 <LocalLeader>%  Jump to the matching tag.   
 
@@ -1289,7 +1333,10 @@ for details.
 <LocalLeader>I  Indent all tags     {{{2
       - will create a multiline layout every opening tag will be shifted out
 				and every closing tag will be shifted in. Be aware that the rendering
-				of the XML through XSLT and/or DSSSL, might be changed by this. For example:
+				of the XML through XSLT and/or DSSSL, might be changed by this.
+				Be aware tha if the file is big, more than 1000 lines, the reformatting
+				takes a long time because vim has to make a big undo buffer.
+				For example using \I on the example below:
         
 				<chapter><title>Indent</title><para>The documentation</para></chapter>
 
@@ -1362,6 +1409,10 @@ for details.
 			Place Cdata section around the block
 <LocalLeader><  Visual Place a Comment around the selected text.  {{{2
 			Place comment around the block
+<LocalLeader>5  Extend the visual selection to the matching tag.  {{{2
+<LocalLeader>%  
+			Extend the visual selection to the matching tag. Make sure you are at
+			the start of the opening tag or the end of the closing tag.
 <LocalLeader>v  Visual Place a tag around the selected text.       {{{2
         - You are asked for tag and attributes. You
         need to have selected text in visual mode before you can use this
