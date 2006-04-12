@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2005/12/08 21:36:32 $
-" Version:      $Revision: 1.28 $
+" Last Change:  $Date: 2006/04/12 12:15:58 $
+" Version:      $Revision: 1.30 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -184,6 +184,10 @@ fun! s:TagUnderCursor()
 		if getline('.')[col('.')-1] == '>'
 			let b:endcol  = col('.')
 			let b:endline = line('.')
+			if getline('.')[col('.')-2] == '-'
+				"we don't work with comment tags
+				retu l:haveTag
+			en
 			if getline('.')[col('.')-2] == '/'
 				"we don't work with empty tags
 				retu l:haveTag
@@ -225,6 +229,244 @@ fun! s:TagUnderCursor()
 		exe b:gotoOpenTag
 	en
 	retu l:haveTag
+endf
+en
+ 
+" InComment()  Is there a Comment under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:InComment')
+fun! s:InComment()
+let b:endcom=0
+let b:begcom=0
+
+	"Lets find forward a < or a >.  If we first find a > we might be in a comment.
+	"If we find a < first or nothing we are definitly not in a Comment
+
+	if getline('.')[col('.') - 1] == '>'
+		if getline('.')[col('.')-2] == '-' && getline('.')[col('.')-3] == '-'
+			let b:endcomcol=col('.')
+			let b:endcomline=line('.')
+			let b:endcom=1
+			retu 1
+		en
+	elseif  getline('.')[col('.')-1] == '<' && getline('.')[col('.')]   == '!'
+		 \ && getline('.')[col('.')+1] == '-' && getline('.')[col('.')+2] == '-' 
+			let b:begcomcol= col('.')
+			let b:begcomline=line('.')
+			let b:begcom=1
+			retu 1
+	en
+	"We are not standing on a begin/end comment
+	"Is the first > an ending comment?
+	if search('[<>]','W') >0
+		if getline('.')[col('.')-1] == '>'
+			if getline('.')[col('.')-2] == '-' && getline('.')[col('.')-3] == '-'
+			let b:endcomcol=col('.')
+			let b:endcomline=line('.')
+			let b:endcom=1
+				retu 1
+			en
+		en
+	en
+	"Forward is not a ending comment
+	"is backward a starting comment
+	
+	if search('[<>]','bW' ) >=0
+		if getline('.')[col('.')-1] == '<' && getline('.')[col('.')]   == '!'
+		 \ && getline('.')[col('.')+1] == '-' && getline('.')[col('.')+2] == '-' 
+			let b:begcomcol=col('.')
+			let b:begcomline=line('.')
+			let b:begcom=1
+			retu 1
+		en
+	en
+	retu 0
+endf
+en
+ 
+" DelComment()  Is there a Comment under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:DelComment')
+fun! s:DelComment()
+	
+	let l:restore =  s:SavePos()
+	if s:InComment()
+		if b:begcom
+			if search('-->','W' ) >=0
+				normal hh3x	
+		   	exe 'normal '.b:begcomline.'G0'.(b:begcomcol>1?(b:begcomcol-1).'l':'')
+				normal 4x
+				retu 1
+			en
+		el
+			if search('<!--','bW' ) >=0
+				normal 4x
+		   	exe 'normal '.b:endcomline.'G0'.(b:endcomcol>1?(b:endcomcol-1).'l':'')
+				normal hh3x	
+				retu 1
+			en
+		en
+	en
+	exe l:restore
+	retu 0
+endf
+en
+ 
+" DelCommentSection()  Is there a Comment under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:DelCommentSection')
+fun! s:DelCommentSection()
+	
+	let l:restore =  s:SavePos()
+	if s:InComment()
+		let l:sentinel = 'XmLSeNtInElXmL'
+		let l:len = strlen(l:sentinel)
+		if b:begcom
+			if search('-->','W' ) >=0
+				exe "normal f>a".l:sentinel."\<Esc>"
+		   	exe 'normal '.b:begcomline.'G0'.(b:begcomcol>1?(b:begcomcol-1).'l':'')
+				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal ".l:len."x"
+				retu 1
+			en
+		el
+			if search('<!--','bW' ) >=0
+				let l:restore =  s:SavePos()
+		   	exe 'normal '.b:endcomline.'G0'.(b:endcomcol>1?(b:endcomcol-1).'l':'')
+				exe "normal a".l:sentinel."\<Esc>"
+				exe l:restore
+				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal ".l:len."x"
+				retu 1
+			en
+		en
+	en
+	exe l:restore
+	retu 0
+endf
+en
+ 
+" DelCData()  Is there a CData under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:DelCData')
+fun! s:DelCData()
+	
+	let l:restore =  s:SavePos()
+	if s:InCData()
+		if b:begdat
+			if search(']]>','W' ) >=0
+				normal hh3x	
+		   	exe 'normal '.b:begdatline.'G0'.(b:begdatcol>1?(b:begdatcol-1).'l':'')
+				normal 9x
+				retu 1
+			en
+		el
+			if search('<![CDATA[','bW' ) >=0
+				normal 9x
+		   	exe 'normal '.b:enddatline.'G0'.(b:enddatcol>1?(b:enddatcol-1).'l':'')
+				normal hh3x	
+				retu 1
+			en
+		en
+	en
+	exe l:restore
+	retu 0
+endf
+en
+ 
+" InCData()  Is there a CData under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:InCData')
+fun! s:InCData()
+let b:enddat=0
+let b:begdat=0
+
+	"Lets find forward a < or a >.  If we first find a > we might be in a comment.
+	"If we find a < first or nothing we are definitly not in a Comment
+
+	if getline('.')[col('.') - 1] == '>'
+		if getline('.')[col('.')-2] == ']' && getline('.')[col('.')-3] == ']'
+			let b:enddatcol=col('.')
+			let b:enddatline=line('.')
+			let b:enddat=1
+			retu 1
+		en
+	elseif  getline('.')[col('.')-1] == '<' 
+		if  match(getline('.'),'<![CDATA[') > 0
+			let b:begdatcol= col('.')
+			let b:begdatline=line('.')
+			let b:begdat=1
+			retu 1
+		en
+	en
+	"We are not standing on a begin/end comment
+	"Is the first > aending comment?
+	if search('[<>]','W') >0
+		if getline('.')[col('.')-1] == '>'
+			if getline('.')[col('.')-2] == ']' && getline('.')[col('.')-3] == ']'
+			let b:enddatcol=col('.')
+			let b:enddatline=line('.')
+			let b:enddat=1
+				retu 1
+			en
+		en
+	en
+	"Forward is not a ending datment
+	"is backward a starting comment
+	
+	if search('[<>]','bW' ) >=0
+		if getline('.')[col('.')-1] == '<' 
+			if  match(getline('.'),'<![CDATA[') > 0
+		let l:newname = inputdialog('Found CDATA')
+				let b:begdatcol=col('.')
+				let b:begdatline=line('.')
+				let b:begdat=1
+				retu 1
+			en
+		en
+	en
+	retu 0
+endf
+en
+ 
+ 
+" DelCDataSection()  Is there a CData under the cursor?               {{{1
+"    - returns 1 (true)  or 0 (false)
+
+if !exists('*s:DelCDataSection')
+fun! s:DelCDataSection()
+	
+	let l:restore =  s:SavePos()
+	if s:InCData()
+		let l:sentinel = 'XmLSeNtInElXmL'
+		let l:len = strlen(l:sentinel)
+		if b:begdat
+			if search(']]>','W' ) >=0
+				exe "normal f>a".l:sentinel."\<Esc>"
+		   	exe 'normal '.b:begdatline.'G0'.(b:begdatcol>1?(b:begdatcol-1).'l':'')
+				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal ".l:len."x"
+				retu 1
+			en
+		el
+			if search('<![CDATA[','bW' ) >=0
+				let l:restore =  s:SavePos()
+		   	exe 'normal '.b:enddatline.'G0'.(b:enddatcol>1?(b:enddatcol-1).'l':'')
+				exe "normal a".l:sentinel."\<Esc>"
+				exe l:restore
+				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal ".l:len."x"
+				retu 1
+			en
+		en
+	en
+	exe l:restore
+	retu 0
 endf
 en
  
@@ -565,14 +807,17 @@ fun! s:Delete()
 			exe b:gotoOpenTag
 			exe l:DeleteTag
 		en
+	else
+		exe l:restore
 	en
 endf
 en
 
-" DeleteAll() Deletes everything between start of open tag and end of  {{{1
+
+" DeleteSection() Deletes everything between start of open tag and end of  {{{1
 " closing tag
-if !exists('*s:DeleteAll')
-fun! s:DeleteAll()
+if !exists('*s:DeleteSection')
+fun! s:DeleteSection()
 	let l:restore = s:SavePos()
 	if s:TagUnderCursor()
 		if s:Match(b:tagName)
@@ -724,6 +969,28 @@ fun! s:BeforeTag()
 			exe line('.').','.l:To.'>'
 			let &report= l:rep
 		en
+		exe  l:restore
+	en
+endf
+en
+
+" CommentTag() surrounds the current tag with a new one                   {{{1
+if !exists('*s:CommentTag')
+fun! s:CommentTag()
+	let l:restore = s:SavePos()
+	if s:TagUnderCursor()
+		if s:Match(b:tagName)
+			exe b:gotoCloseTag
+			exe "normal! />\<Cr>a\<Cr>-->\<Esc>"
+			let l:To = line('.')
+			exe b:gotoOpenTag
+			exe "normal! i<!--\<Cr>\<Esc>"
+			let l:rep=&report
+			let &report=999999
+			exe line('.').','.l:To.'>'
+			let &report= l:rep
+		en
+	else
 		exe  l:restore
 	en
 endf
@@ -927,16 +1194,26 @@ if !exists("g:did_xml_menu")
 	:1011 vmenu <script> &Xml.BlockTag\ multi<Tab>V  <Esc>:call <SID>BlockTag(1)<Cr>
 	vmenu <script> Xml.BlockTag\ inline<Tab>v  <Esc>:call <SID>BlockTag(0)<CR>
 	vmenu <script> Xml.Insert\ listitem<Tab>l <Esc>:call <SID>vlistitem()<CR>
-	vmenu <script> Xml.Comment<Tab>c <Esc>:call <SID>BlockWith('<!--','-->')<Cr>
+	vmenu <script> Xml.Comment<Tab>< <Esc>:call <SID>BlockWith('<!--','-->')<Cr>
 	vmenu <script> Xml.Comment\ With\ CData<Tab>c <Esc>:call <SID>BlockWith('<![CDATA[',']]>')<Cr>
+	nmenu <script> Xml.Comment\ Tag<Tab>= <Esc>:call <SID>CommentTag()<Cr>
+	imenu <script> Xml.Comment\ Tag<Tab>= <Esc>:call <SID>CommentTag()<Cr>
 	nmenu <script> Xml.Change<Tab>c  :call <SID>Change()<CR>
 	imenu <script> Xml.Change<Tab>c  <C-C>:call <SID>Change()<CR>
 	nmenu <script> Xml.Change\ Whole\ Tag<Tab>C  :call <SID>ChangeWholeTag()<CR>
 	imenu <script> Xml.Change\ Whole\ Tag<Tab>C  <C-C>:call <SID>ChangeWholeTag()<CR>
-	nmenu <script> Xml.Delete<Tab>d  :call <SID>Delete()<CR>
-	imenu <script> Xml.Delete<Tab>d  <C-C>:call <SID>Delete()<CR>
-	nmenu <script> Xml.DeleteAll<Tab>D  :call <SID>DeleteAll()<CR>
-	imenu <script> Xml.DeleteAll<Tab>D  <C-C>:call <SID>DeleteAll()<CR>
+	nmenu <script> Xml.Delete\ Comment<Tab>]  :call <SID>DelComment()<CR>
+	imenu <script> Xml.Delete\ Comment<Tab>]  <C-C>:call <SID>DelComment()<CR>
+	nmenu <script> Xml.Delete\ Comment\ Section<Tab>}  :call <SID>DelCommentSection()<CR>
+	imenu <script> Xml.Delete\ Comment\ Section<Tab>}  <C-C>:call <SID>DelCommentSection()<CR>
+	nmenu <script> Xml.Delete\ CData<Tab>[  :call <SID>DelCData()<CR>
+	imenu <script> Xml.Delete\ CData<Tab>[  <C-C>:call <SID>DelCData()<CR>
+	nmenu <script> Xml.Delete\ CData\ Section<Tab>[  :call <SID>DelCDataSection()<CR>
+	imenu <script> Xml.Delete\ CData\ Section<Tab>[  <C-C>:call <SID>DelCDataSection()<CR>
+	nmenu <script> Xml.Delete\ Tag<Tab>d  :call <SID>Delete()<CR>
+	imenu <script> Xml.Delete\ Tag<Tab>d  <C-C>:call <SID>Delete()<CR>
+	nmenu <script> Xml.Delete\ Section<Tab>D  :call <SID>DeleteSection()<CR>
+	imenu <script> Xml.Delete\ Section<Tab>D  <C-C>:call <SID>DeleteSection()<CR>
 	nmenu <script> Xml.End\ Tag<Tab>e  :call <SID>EndTag()<CR>
 	imenu <script> Xml.End\ Tag<Tab>e  <C-C>:call <SID>EndTag()<CR>
 	nmenu <script> Xml.Fold\ CData  :?<!\[CDATA\[?,/\]\]>/fo<CR>
@@ -1085,7 +1362,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.28 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.30 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -1102,8 +1379,10 @@ vnoremap <silent> <buffer> <LocalLeader>% <Esc>:call <SID>MatchesVisual()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>c :call <SID>Change()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>C :call <SID>ChangeWholeTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>d :call <SID>Delete()<Cr>
-nnoremap <silent> <buffer> <LocalLeader>D :call <SID>DeleteAll()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>D :call <SID>DeleteSection()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>e :call <SID>EndTag()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>] :call <SID>DelComment()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>} :call <SID>DelCommentSection()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>f :call <SID>FoldTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>F :call <SID>FoldTagAll()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>g :call <SID>FormatTag()<Cr>
@@ -1111,8 +1390,11 @@ nnoremap <silent> <buffer> <LocalLeader>G :call <SID>FormatTagAll()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>I :call <SID>IndentAll()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>j :call <SID>Join()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>O :call <SID>BeforeTag()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>= :call <SID>CommentTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>o :call <SID>AfterTag()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>s :call <SID>StartTag()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>[ :call <SID>DelCData()<Cr>
+nnoremap <silent> <buffer> <LocalLeader>{ :call <SID>DelCDataSection()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>> :call <SID>ShiftRight()<Cr>
 nnoremap <silent> <buffer> <LocalLeader>< :call <SID>ShiftLeft()<Cr>
 vnoremap <silent> <buffer> <LocalLeader>l <Esc>:call <SID>vlistitem()<Cr>
@@ -1271,6 +1553,10 @@ for details.
 						(http://www.vim.org/scripts/script.php?script_id=632)
 						
 [ and ] mappings                            {{{2
+          <LocalLeader>[        Delete <![CDATA[ ]]> delimiters
+          <LocalLeader>{        Delete <![CDATA[ ]]> section
+          <LocalLeader>]        Delete <!-- -->      delimiters
+          <LocalLeader>}        Delete <!-- -->      section
           [[        Goto to the previous open tag 
           [[        Goto to the next open tag 
           []        Goto to the previous close tag 
@@ -1401,6 +1687,19 @@ for details.
         pressing \s twice produces
             <para><listitem>list item content</para></listitem>
 
+<LocalLeader>[        Delete <![CDATA[ ]]> delimiters               {{{2
+								Removes Only <CDATA[ and ]]> 
+								handy when you want	to uncomment a section.
+								You need to stand in the tag and not on an other tag
+								<![CDATA[  <tag> ]]>
+								if you  cursor is outside <tag> but inside the
+								CDATA tag the delition works.
+<LocalLeader>{        Delete <![CDATA[ ]]> section                  {{{2
+								Removes everything tag and Content
+<LocalLeader>]        Delete <!-- -->      delimiters               {{{2
+								Uncommnet a block.
+<LocalLeader>}        Delete <!--  -->      section                  {{{2
+								Removes everything tag and Content
 <LocalLeader>>  shift right opening tag and closing tag.           {{{2
                 shift everything between the tags 1 shiftwide right
 <LocalLeader><  shift left opening tag and closing tag.           {{{2
