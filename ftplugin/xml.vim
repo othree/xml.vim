@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2006/04/12 12:15:58 $
-" Version:      $Revision: 1.30 $
+" Last Change:  $Date: 2006/05/12 21:56:27 $
+" Version:      $Revision: 1.32 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -134,9 +134,9 @@ en
 "is quite a big range. We assume that everything after '<' or '</' 
 "until the first 'space', 'forward slash' or '>' ends de name part.
 if !exists('*s:GetTagName')
-fun! s:GetTagName(begin)
-	  let l:end = match(getline('.'), s:EndofName,a:begin)
-	  return strpart(getline('.'),a:begin, l:end - a:begin )
+fun! s:GetTagName(from)
+	  let l:end = match(getline('.'), s:EndofName,a:from)
+	  return strpart(getline('.'),a:from, l:end - a:from )
 endf
 en
 " hasAtt() Looks for attribute in open tag                           {{{1
@@ -180,6 +180,18 @@ fun! s:TagUnderCursor()
 				"we don't work with empty tags
 			retu l:haveTag
 		en
+    " begin: gwang customization for JSP development
+		if getline('.')[col('.')-2] == '%'
+				"we don't work with jsp %> tags
+			retu l:haveTag
+		en
+    " end: gwang customization for JSP development
+    " begin: gwang customization for PHP development
+		if getline('.')[col('.')-2] == '?'
+				"we don't work with php ?> tags
+			retu l:haveTag
+		en
+    " end: gwang customization for PHP development
 	elseif search('[<>]','W') >0
 		if getline('.')[col('.')-1] == '>'
 			let b:endcol  = col('.')
@@ -218,12 +230,19 @@ fun! s:TagUnderCursor()
 		retu l:haveTag
 	en
 
-	let l:haveTag = 1
 	"we have established that we are between something like
 	"'</\?[^>]*>'
 	
 	let b:tagName = s:GetTagName(col('.') + b:firstWasEndTag)
 	"echo 'Tag ' . b:tagName 
+
+  "begin: gwang customization, do not work with an empty tag name
+  if b:tagName == '' 
+		retu l:haveTag
+  en
+  "end: gwang customization, do not work with an empty tag name
+
+	let l:haveTag = 1
 	if b:firstWasEndTag == 0
 		call s:hasAtt()
 		exe b:gotoOpenTag
@@ -1216,8 +1235,9 @@ if !exists("g:did_xml_menu")
 	imenu <script> Xml.Delete\ Section<Tab>D  <C-C>:call <SID>DeleteSection()<CR>
 	nmenu <script> Xml.End\ Tag<Tab>e  :call <SID>EndTag()<CR>
 	imenu <script> Xml.End\ Tag<Tab>e  <C-C>:call <SID>EndTag()<CR>
-	nmenu <script> Xml.Fold\ CData  :?<!\[CDATA\[?,/\]\]>/fo<CR>
 	nmenu <script> Xml.Fold\ Comment  :?<!--?,/-->/fo<CR>
+	nmenu <script> Xml.Fold\ CData  :?<!\[CDATA\[?,/\]\]>/fo<CR>
+	nmenu <script> Xml.Fold\ Processing\ instruc  :?<\?[a-zA-Z]*?,/?>/fo<CR>
 	nmenu <script> Xml.Fold\ Tag<Tab>f  :call <SID>FoldTag()<CR>
 	nmenu <script> Xml.Fold\ All\ Tags<Tab>F  :call <SID>FoldTagAll()<CR>
 	nmenu <script> Xml.Format\ Tags<Tab>g  :call <SID>FormatTag()<CR>
@@ -1362,7 +1382,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.30 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.32 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
