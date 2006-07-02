@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2006/05/12 21:56:27 $
-" Version:      $Revision: 1.32 $
+" Last Change:  $Date: 2006/07/02 19:58:42 $
+" Version:      $Revision: 1.33 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -49,7 +49,7 @@ endif
 " Script rgular expresion used. Documents those nasty criters      {{{1
 let s:NoSlashBeforeGt = '\(\/\)\@\<!>'
 " Don't check for quotes around attributes!!!
-let s:Attrib =  '\(\(\s\|\n\)\+\([^>= \t]\+=[^>=]\+\)\(\s\|\n\)*\)' 
+let s:Attrib =  '\(\(\s\|\n\)\+\([^>= \t]\+=[^>&]\+\)\(\s\|\n\)*\)'
 let s:OptAttrib = s:Attrib . '*'. s:NoSlashBeforeGt
 let s:ReqAttrib = s:Attrib . '\+'. s:NoSlashBeforeGt
 let s:OpenTag = '<[^!/?][^>]*' . s:OptAttrib
@@ -1382,7 +1382,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.32 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.33 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
