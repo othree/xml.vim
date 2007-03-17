@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2006/07/02 19:58:42 $
-" Version:      $Revision: 1.33 $
+" Last Change:  $Date: 2007/03/17 12:39:40 $
+" Version:      $Revision: 1.35 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -111,7 +111,7 @@ endif
 " SavePos() saves position  in bufferwide variable                        {{{1
 if !exists('*s:SavePos')
 fun! s:SavePos()	
-	retu 'normal '.line('.').'G0'. (col('.') > 1 ? (col('.')-1).'l' : '')
+	retu 'call cursor('.line('.').','. col('.'). ')'
 endf
 en
 
@@ -251,6 +251,43 @@ fun! s:TagUnderCursor()
 endf
 en
  
+" Match(tagname) Looks for open or close tag of tagname               {{{1
+" Set buffer wide variable
+"  - b:gotoCloseTag (if the Match tag is one)
+"  - b:gotoOpenTag  (if the Match tag is one)
+" on exit
+"    - returns 1 (true) or 0 (false)
+"    - position is at '<'
+if !exists('*s:Match')
+fun! s:Match(name)
+	let l:pat = '</\=' . a:name . s:OptAttrib
+	if  b:firstWasEndTag
+		exe b:gotoCloseTag
+		let l:flags='bW'
+		let l:level = -1
+	el
+		exe  'normal '.b:endline.'G0'.(b:endcol-1).'l'
+		let l:flags='W'
+		let l:level = 1
+	en
+	while l:level &&  search(l:pat,l:flags) > 0
+		let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
+	endwhile
+	if l:level
+		echo "no matching tag!!!!!"
+		retu l:level
+	en
+	if b:firstWasEndTag
+		let b:gotoOpenTag = s:SavePos()
+		call s:hasAtt()
+		exe b:gotoOpenTag
+	el
+		let b:gotoCloseTag = s:SavePos()
+	en
+	retu l:level == 0
+endf
+en
+
 " InComment()  Is there a Comment under the cursor?               {{{1
 "    - returns 1 (true)  or 0 (false)
 
@@ -315,14 +352,14 @@ fun! s:DelComment()
 		if b:begcom
 			if search('-->','W' ) >=0
 				normal hh3x	
-		   	exe 'normal '.b:begcomline.'G0'.(b:begcomcol>1?(b:begcomcol-1).'l':'')
+		   	call cursor(b:begcomline,b:begcomcol)
 				normal 4x
 				retu 1
 			en
 		el
 			if search('<!--','bW' ) >=0
 				normal 4x
-		   	exe 'normal '.b:endcomline.'G0'.(b:endcomcol>1?(b:endcomcol-1).'l':'')
+		   	call cursor(b:endcomline,b:endcomcol)
 				normal hh3x	
 				retu 1
 			en
@@ -346,7 +383,7 @@ fun! s:DelCommentSection()
 		if b:begcom
 			if search('-->','W' ) >=0
 				exe "normal f>a".l:sentinel."\<Esc>"
-		   	exe 'normal '.b:begcomline.'G0'.(b:begcomcol>1?(b:begcomcol-1).'l':'')
+		   	call cursor(b:begcomline,b:begcomcol)
 				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
 				exe "normal ".l:len."x"
 				retu 1
@@ -354,7 +391,7 @@ fun! s:DelCommentSection()
 		el
 			if search('<!--','bW' ) >=0
 				let l:restore =  s:SavePos()
-		   	exe 'normal '.b:endcomline.'G0'.(b:endcomcol>1?(b:endcomcol-1).'l':'')
+		   	call cursor(b:endcomline,b:endcomcol)
 				exe "normal a".l:sentinel."\<Esc>"
 				exe l:restore
 				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
@@ -379,14 +416,14 @@ fun! s:DelCData()
 		if b:begdat
 			if search(']]>','W' ) >=0
 				normal hh3x	
-		   	exe 'normal '.b:begdatline.'G0'.(b:begdatcol>1?(b:begdatcol-1).'l':'')
+		   	call cursor(b:begdatline,b:begdatcol)
 				normal 9x
 				retu 1
 			en
 		el
 			if search('<![CDATA[','bW' ) >=0
 				normal 9x
-		   	exe 'normal '.b:enddatline.'G0'.(b:enddatcol>1?(b:enddatcol-1).'l':'')
+		   	call cursor(b:enddatline,b:enddatcol)
 				normal hh3x	
 				retu 1
 			en
@@ -467,7 +504,7 @@ fun! s:DelCDataSection()
 		if b:begdat
 			if search(']]>','W' ) >=0
 				exe "normal f>a".l:sentinel."\<Esc>"
-		   	exe 'normal '.b:begdatline.'G0'.(b:begdatcol>1?(b:begdatcol-1).'l':'')
+		   	call cursor(b:begdatline,b:begdatcol)
 				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
 				exe "normal ".l:len."x"
 				retu 1
@@ -475,7 +512,7 @@ fun! s:DelCDataSection()
 		el
 			if search('<![CDATA[','bW' ) >=0
 				let l:restore =  s:SavePos()
-		   	exe 'normal '.b:enddatline.'G0'.(b:enddatcol>1?(b:enddatcol-1).'l':'')
+		   	call cursor(b:enddatline,b:enddatcol)
 				exe "normal a".l:sentinel."\<Esc>"
 				exe l:restore
 				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
@@ -490,43 +527,6 @@ endf
 en
  
  
-" Match(tagname) Looks for open or close tag of tagname               {{{1
-" Set buffer wide variable
-"  - b:gotoCloseTag (if the Match tag is one)
-"  - b:gotoOpenTag  (if the Match tag is one)
-" on exit
-"    - returns 1 (true) or 0 (false)
-"    - position is at '<'
-if !exists('*s:Match')
-fun! s:Match(name)
-	let l:pat = '</\=' . a:name . s:OptAttrib
-	if  b:firstWasEndTag
-		exe b:gotoCloseTag
-		let l:flags='bW'
-		let l:level = -1
-	el
-		exe  'normal '.b:endline.'G0'.(b:endcol-1).'l'
-		let l:flags='W'
-		let l:level = 1
-	en
-	while l:level &&  search(l:pat,l:flags) > 0
-		let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
-	endwhile
-	if l:level
-		echo "no matching tag!!!!!"
-		retu l:level
-	en
-	if b:firstWasEndTag
-		let b:gotoOpenTag = s:SavePos()
-		call s:hasAtt()
-		exe b:gotoOpenTag
-	el
-		let b:gotoCloseTag = s:SavePos()
-	en
-	retu l:level == 0
-endf
-en
-
 " Matches()  Matches de tagname under de cursor                       {{{1
 if !exists('*s:Matches')
 fun! s:Matches()	
@@ -597,9 +597,9 @@ function! s:makeElement()
 endfunction
 en
 
-" CloseTag() closing the tag which is being typed                  {{{1
-if !exists('*s:CloseTag')
-fun! s:CloseTag()	
+" CloseTagFun() closing the tag which is being typed                  {{{1
+if !exists('*s:CloseTagFun')
+fun! s:CloseTagFun()	
 	let l:restore =  s:SavePos()
 	let l:endOfLine = ((col('.')+1) == col('$'))
 	if col('.') > 1 && getline('.')[col('.')-2] == '>'
@@ -1382,7 +1382,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.33 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.35 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -1437,9 +1437,9 @@ noremap <silent><buffer> [" :call search('\%(^\s*<!--.*\n\)\%(^\s*-->\)\@!', "bW
 setlocal iskeyword=@,48-57,_,192-255,58  
 exe 'inoremap <silent> <buffer> '.b:suffix. " ><Esc>db:call <SID>makeElement()<Cr>"
 if !exists("g:xml_tag_completion_map")
-    inoremap <silent> <buffer> > ><Esc>:call <SID>CloseTag()<Cr>
+    inoremap <silent> <buffer> > ><Esc>:call <SID>CloseTagFun()<Cr>
 else
-    execute "inoremap <silent> <buffer> " . g:xml_tag_completion_map . " ><Esc>:call <SID>CloseTag()<Cr>"
+    execute "inoremap <silent> <buffer> " . g:xml_tag_completion_map . " ><Esc>:call <SID>CloseTagFun()<Cr>"
 endif
 
 
