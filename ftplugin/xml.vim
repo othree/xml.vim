@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2007/03/17 12:39:40 $
-" Version:      $Revision: 1.35 $
+" Last Change:  $Date: 2007/05/13 11:39:55 $
+" Version:      $Revision: 1.36 $
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -12,6 +12,7 @@
 "               for the original code.  Guo-Peng Wen for the self
 "               install documentation code.
 "               Bart vam Deenen for makeElement function
+"               Rene de Zwart
 
 
 " Observation   - If you want to do something to a match pair most of the time
@@ -54,7 +55,7 @@ let s:OptAttrib = s:Attrib . '*'. s:NoSlashBeforeGt
 let s:ReqAttrib = s:Attrib . '\+'. s:NoSlashBeforeGt
 let s:OpenTag = '<[^!/?][^>]*' . s:OptAttrib
 let s:OpenOrCloseTag = '<[^!?][^>]*'. s:OptAttrib
-let s:CloseTag = '<\/[^>]*'. s:OptAttrib
+let s:CloseTag = '<\/[^>]*'. s:NoSlashBeforeGt
 let s:SpaceInfront = '^\s*<'
 let s:EndofName = '\($\|\s\|>\)'
 
@@ -109,25 +110,19 @@ endfunction
 endif
 
 " SavePos() saves position  in bufferwide variable                        {{{1
-if !exists('*s:SavePos')
 fun! s:SavePos()	
 	retu 'call cursor('.line('.').','. col('.'). ')'
 endf
-en
 
 " findOpenTag()                         {{{1
-if !exists('*s:findOpenTag')
 fun! s:findOpenTag(flag)	
 	call search(s:OpenTag,a:flag)
 endf
-en
 
 " findCloseTag()                         {{{1
-if !exists('*s:findCloseTag')
 fun! s:findCloseTag(flag)	
 	call search(s:CloseTag,a:flag)
 endf
-en
 
 " GetTagName() Gets the tagname from start position                     {{{1
 "Now lets go for the name part. The namepart are xmlnamechars which
@@ -141,7 +136,6 @@ endf
 en
 " hasAtt() Looks for attribute in open tag                           {{{1
 " expect cursor to be on <
-if !exists('*s:hasAtt')
 fun! s:hasAtt()
 	"Check if this open tag has attributes
 	let l:line = line('.') | let l:col = col('.') 
@@ -151,7 +145,6 @@ fun! s:hasAtt()
 		en
 	en
 endf
-en
  
 
 " TagUnderCursor()  Is there a tag under the cursor?               {{{1
@@ -1382,7 +1375,7 @@ endfunction
 " }}}2
 
 let s:revision=
-      \ substitute("$Revision: 1.35 $",'\$\S*: \([.0-9]\+\) \$','\1','')
+      \ substitute("$Revision: 1.36 $",'\$\S*: \([.0-9]\+\) \$','\1','')
 silent! let s:install_status =
     \ s:XmlInstallDocumentation(expand('<sfile>:p'), s:revision)
 if (s:install_status == 1)
@@ -1740,9 +1733,6 @@ for details.
         The top uses append
         The bottom uses append
         Useful when marking up a text file
-
-------------------------------------------------------------------------------
-                                                        *xml-plugin-callbacks*
 
 ------------------------------------------------------------------------------
                                                         *xml-plugin-callbacks*
