@@ -2,8 +2,8 @@
 " FileType:     XML
 " Author:       Rene de Zwart <renez (at) lightcon.xs4all.nl> 
 " Maintainer:   Rene de Zwart <renez (at) lightcon.xs4all.nl>
-" Last Change:  $Date: 2007/05/13 11:39:55 $
-" Version:      $Revision: 1.36 $
+" Last Change:  Date: 2009-11-12 
+" Version:      Revision: 1.37
 " 
 " Licence:      This program is free software; you can redistribute it
 "               and/or modify it under the terms of the GNU General Public
@@ -19,6 +19,10 @@
 "               you must do first the close tag. Because doing first the open
 "               tag could change the close tag position.
 
+" NOTE          with filetype index on de standard indent/html.vim interferes
+"               with xml.vim. You can
+"                 1) set filetype indent off in .vimrc
+"                 2) echo "let b:did_indent = 1" > .vim/indent/html.vim
 
 
 " Only do this when not done yet for this buffer
@@ -259,7 +263,7 @@ fun! s:Match(name)
 		let l:flags='bW'
 		let l:level = -1
 	el
-		exe  'normal '.b:endline.'G0'.(b:endcol-1).'l'
+		exe  'normal! '.b:endline.'G0'.(b:endcol-1).'l'
 		let l:flags='W'
 		let l:level = 1
 	en
@@ -344,16 +348,16 @@ fun! s:DelComment()
 	if s:InComment()
 		if b:begcom
 			if search('-->','W' ) >=0
-				normal hh3x	
+				normal! hh3x	
 		   	call cursor(b:begcomline,b:begcomcol)
-				normal 4x
+				normal! 4x
 				retu 1
 			en
 		el
 			if search('<!--','bW' ) >=0
-				normal 4x
+				normal! 4x
 		   	call cursor(b:endcomline,b:endcomcol)
-				normal hh3x	
+				normal! hh3x	
 				retu 1
 			en
 		en
@@ -375,20 +379,20 @@ fun! s:DelCommentSection()
 		let l:len = strlen(l:sentinel)
 		if b:begcom
 			if search('-->','W' ) >=0
-				exe "normal f>a".l:sentinel."\<Esc>"
+				exe "normal! f>a".l:sentinel."\<Esc>"
 		   	call cursor(b:begcomline,b:begcomcol)
-				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
-				exe "normal ".l:len."x"
+				exe "normal! \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal! ".l:len."x"
 				retu 1
 			en
 		el
 			if search('<!--','bW' ) >=0
 				let l:restore =  s:SavePos()
 		   	call cursor(b:endcomline,b:endcomcol)
-				exe "normal a".l:sentinel."\<Esc>"
+				exe "normal! a".l:sentinel."\<Esc>"
 				exe l:restore
-				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
-				exe "normal ".l:len."x"
+				exe "normal! \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal! ".l:len."x"
 				retu 1
 			en
 		en
@@ -408,16 +412,16 @@ fun! s:DelCData()
 	if s:InCData()
 		if b:begdat
 			if search(']]>','W' ) >=0
-				normal hh3x	
+				normal! hh3x	
 		   	call cursor(b:begdatline,b:begdatcol)
-				normal 9x
+				normal! 9x
 				retu 1
 			en
 		el
 			if search('<![CDATA[','bW' ) >=0
-				normal 9x
+				normal! 9x
 		   	call cursor(b:enddatline,b:enddatcol)
-				normal hh3x	
+				normal! hh3x	
 				retu 1
 			en
 		en
@@ -496,20 +500,20 @@ fun! s:DelCDataSection()
 		let l:len = strlen(l:sentinel)
 		if b:begdat
 			if search(']]>','W' ) >=0
-				exe "normal f>a".l:sentinel."\<Esc>"
+				exe "normal! f>a".l:sentinel."\<Esc>"
 		   	call cursor(b:begdatline,b:begdatcol)
-				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
-				exe "normal ".l:len."x"
+				exe "normal! \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal! ".l:len."x"
 				retu 1
 			en
 		el
 			if search('<![CDATA[','bW' ) >=0
 				let l:restore =  s:SavePos()
 		   	call cursor(b:enddatline,b:enddatcol)
-				exe "normal a".l:sentinel."\<Esc>"
+				exe "normal! a".l:sentinel."\<Esc>"
 				exe l:restore
-				exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
-				exe "normal ".l:len."x"
+				exe "normal! \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+				exe "normal! ".l:len."x"
 				retu 1
 			en
 		en
@@ -539,16 +543,16 @@ fun! s:MatchesVisual()
 	let l:restore =  s:SavePos()
 	if s:TagUnderCursor()
 		if b:firstWasEndTag
-			normal f>
+			normal! f>
 		en
-		normal gv
+		normal! gv
 		if s:Match(b:tagName)
 			if b:firstWasEndTag == 0
-				normal f>
+				normal! f>
 			en 
 			retu
 		en
-		normal v
+		normal! v
 	en
 	exe l:restore
 endf
@@ -561,18 +565,18 @@ function! s:makeElement()
 	let b:haveAtt = 0
 	let l:alone = (match(getline('.'),'^\s*>\s*$') >= 0)
 	let l:endOfLine = ((col('.')+1) == col('$'))
-	normal i<pf>
+	normal! i<pf>
 	if b:html_mode && b:tagName =~? b:emptyTags
 		if b:haveAtt == 0
 			call s:Callback (b:tagName, b:html_mode)
 		endif
 		if b:xml_use_xhtml
-			exe "normal i/\<Esc>l"
+			exe "normal! i/\<Esc>l"
 		en
 		if  l:endOfLine
 			start!
 		el
-			normal l
+			normal! l
 			start
 		en
 	el
@@ -600,29 +604,29 @@ fun! s:CloseTagFun()
 	"<t>
 	"	    cursor comes here
 	"</t>
-    normal h
+    normal! h
 		if s:TagUnderCursor()
 			if b:firstWasEndTag == 0
-				exe "normal 2f>s\<Cr>\<Esc>Ox\<Esc>>>$x"
+				exe "normal! 2f>s\<Cr>\<Esc>Ox\<Esc>>>$x"
 				start!
 				retu
 			en
 		en
 	elseif s:TagUnderCursor()
 		if b:firstWasEndTag == 0
-			exe "normal />\<Cr>"
+			exe "normal! />\<Cr>"
 			if b:html_mode && b:tagName =~?  b:emptyTags
 				if b:haveAtt == 0
 					call s:Callback (b:tagName, b:html_mode)
 				en
 				if b:xml_use_xhtml
-					exe "normal i/\<Esc>l"
+					exe "normal! i/\<Esc>l"
 				en
 				if l:endOfLine
 					start!
 					retu
 				el
-					normal l
+					normal! l
 					start
 					retu
 				en
@@ -640,7 +644,7 @@ fun! s:CloseTagFun()
 	if (col('.')+1) == col("$")
 		startinsert!
 	else
-		normal l
+		normal! l
 		startinsert
 	en
 endf
@@ -664,14 +668,14 @@ fun! s:BlockTag(multi)
 
 	"Get at the end of the block
 	if col('.') == col("'<") && line('.') == line("'<")
-		normal gvov
+		normal! gvov
 	en
 	if a:multi
 		exe "normal! a\<Cr></".l:newname.">\<Cr>\<Esc>"
 		let l:eline = line('.')
-		normal gvov
+		normal! gvov
 		if col('.') == col("'>") && line('.') == line("'>")
-			normal gvov
+			normal! gvov
 		en
 		let l:sline = line(".") + 2
 		exe "normal! i\<Cr><".l:newname.
@@ -681,11 +685,11 @@ fun! s:BlockTag(multi)
 			let &report=999999
 			exe l:sline.','.l:eline.'>'
 			let &report= l:rep
-			exe 'normal '.l:sline.'G0mh'.l:eline."G$v'hgq"
+			exe 'normal! '.l:sline.'G0mh'.l:eline."G$v'hgq"
 	el
 		exe "normal! a</".l:newname.">\<Esc>gvov"
 		if col('.') == col("'>") && line('.') == line("'>")
-			normal gvov
+			normal! gvov
 		en
 		exe "normal! i<".l:newname.
 			\ (strlen(l:newatt) ? ' '.l:newatt : '' )
@@ -700,10 +704,10 @@ en
 if !exists('*s:BlockWith')
 fun! s:BlockWith(open,close)
 	if col('.') == col("'<") && line('.') == line("'<")
-		normal gvov
+		normal! gvov
 	en
 	exe "normal! a\<Cr>;x\<Esc>0cfx".a:close."\<Cr>\<Esc>"
-	normal gvov
+	normal! gvov
 	exe "normal! i\<Cr>;x\<Esc>0cfx".a:open."\<Cr>\<Esc>"
 endf
 en
@@ -715,10 +719,10 @@ if !exists('*s:vlistitem')
 fun! s:vlistitem()
 	"Get at the end of the block
 	if col('.') == col("'<") && line('.') == line("'<")
-		normal gvov
+		normal! gvov
 	en
 	exe "normal! a</para>\<Cr></listitem>\<Esc>mh"
-	normal gvov
+	normal! gvov
 	exe "normal! i\<Cr><listitem>\<Cr>\<Tab><para>\<Esc>'h/listitem>/e+1\<Cr>"
 endf
 en
@@ -734,9 +738,9 @@ fun! s:Change()
 		let b:lastTag =  l:newname
 		if s:Match(b:tagName)
 			exe b:gotoCloseTag
-			exe 'normal 2lcw' . l:newname . "\<Esc>"
+			exe 'normal! 2lcw' . l:newname . "\<Esc>"
 			exe b:gotoOpenTag
-			exe 'normal lcw' . l:newname . "\<Esc>"
+			exe 'normal! lcw' . l:newname . "\<Esc>"
 		en
 	en
 endf
@@ -770,7 +774,7 @@ fun! s:Join()
 				el
 					let b:gotoCloseTag = s:SavePos()
 				en
-				let l:DeleteTag  = "normal d/>/e\<Cr>"
+				let l:DeleteTag  = "normal! d/>/e\<Cr>"
 				exe b:gotoCloseTag
 				exe l:DeleteTag
 				exe b:gotoOpenTag
@@ -797,9 +801,9 @@ fun! s:ChangeWholeTag()
 		en
 		if s:Match(b:tagName)
 			exe b:gotoCloseTag
-			exe "normal 2lc/>\<Cr>".l:newname."\<Esc>"
+			exe "normal! 2lc/>\<Cr>".l:newname."\<Esc>"
 			exe b:gotoOpenTag
-			exe "normal lc/>/\<Cr>".l:newname.
+			exe "normal! lc/>/\<Cr>".l:newname.
 			\ (strlen(l:newatt) ? ' '.l:newatt : '' )
 			\."\<Esc>"
 		en
@@ -813,7 +817,7 @@ fun! s:Delete()
 	let l:restore = s:SavePos()
 	if s:TagUnderCursor()
 		if s:Match(b:tagName)
-			let l:DeleteTag  = "normal d/>/e\<Cr>"
+			let l:DeleteTag  = "normal! d/>/e\<Cr>"
 			exe b:gotoCloseTag
 			exe l:DeleteTag
 			exe b:gotoOpenTag
@@ -838,10 +842,10 @@ fun! s:DeleteSection()
 			let l:rep=&report
 			let &report=999999
 			exe b:gotoCloseTag
-			exe "normal />\<Cr>a".l:sentinel."\<Esc>"
+			exe "normal! />\<Cr>a".l:sentinel."\<Esc>"
 			exe b:gotoOpenTag
-			exe "normal \"xd/".l:sentinel."/e-".l:len."\<Cr>"
-			exe "normal ".l:len."x"
+			exe "normal! \"xd/".l:sentinel."/e-".l:len."\<Cr>"
+			exe "normal! ".l:len."x"
 			let &report= l:rep
 		en
 	en
@@ -882,7 +886,7 @@ fun! s:FoldTagAll()
 		en
 		let b:lastTag =  l:tname
 	en
-	normal G$
+	normal! G$
 	let l:flag='w'
 	while search('<'.l:tname.s:OptAttrib,l:flag) > 0
 		let l:flag='W'
@@ -945,7 +949,7 @@ fun! s:EndTag()
 	if l:level == 0
 	  let l:Name = s:GetTagName(col('.'))
 	  exe  l:restore
-	  exe 'normal a</'. l:Name.">\e"
+	  exe 'normal! a</'. l:Name.">\e"
 	el
 	  exe  l:restore
 	en
@@ -1080,9 +1084,9 @@ fun! s:FormatTag()
 	if s:TagUnderCursor()
 		if s:Match(b:tagName)
 			exe b:gotoCloseTag
-			normal hhmh
+			normal! hhmh
 			exe b:gotoOpenTag
-			exe "normal />/e+1\<Cr>v'hgq"
+			exe "normal! />/e+1\<Cr>v'hgq"
 		en
 	en
 endf
@@ -1105,18 +1109,18 @@ fun! s:FormatTagAll()
 			retu
 		en
 	en
-	normal G$
+	normal! G$
 	let l:flag = 'w'
 	while search('<'.l:tname . s:OptAttrib, l:flag) > 0
 		let l:flag = 'W'
 		let l:sline = line('.')
 		let l:level = 1
-		exe "normal />/e+1\<cr>mh"
+		exe "normal! />/e+1\<cr>mh"
 		while l:level &&  search('</\='.l:tname . s:EndofName,'W') > 0
 			let l:level = l:level + (getline('.')[col('.')] == '/' ? -1 : 1)
 		endwhile
 		if l:level == 0
-			normal hv'hogq
+			normal! hv'hogq
 		el
 			let l:tmp = 
 				\ inputdialog("The tag ".l:tname."(".l:sline.") doesn't have a closetag")
@@ -1136,39 +1140,39 @@ fun! s:IndentAll()
 			let l:rep=&report
 			let &report=999999
 	"shift everything left
-	normal 1G<G<G<G<G<G<GG$
+	normal! 1G<G<G<G<G<G<GG$
 	if search(s:OpenTag,'w') > 0
 		let l:level = 1
-		normal f>
+		normal! f>
 		"if there is something after the tag move that to the next line
 		if col('.')+1 != col('$')
 			echo "after tag".line('.')
-			exe "normal a\<Cr>\<Esc>"
+			exe "normal! a\<Cr>\<Esc>"
 		el
-			normal j
+			normal! j
 		en
-		normal >Gk$
+		normal! >Gk$
 		while search(s:OpenOrCloseTag,'W') > 0
 			"if there is text before the tag then move the tag to the next line
 			if  match(getline('.'),s:SpaceInfront) == -1
-				exe "normal i\<Cr>\<Esc>l"
+				exe "normal! i\<Cr>\<Esc>l"
 			en
 			if getline('.')[col('.')] == '/'
-				normal <G0f>
+				normal! <G0f>
 				"if there is something after the tag move that to the next line
 				if col('.')+1 != col('$')
-					exe "normal a\<Cr>\<Esc>"
+					exe "normal! a\<Cr>\<Esc>"
 				en
 				let l:level = l:level - 1
 			el
-				normal f>
+				normal! f>
 				"if there is something after the tag move that to the next line
 				if col('.')+1 != col('$')
-					exe "normal a\<Cr>\<Esc>"
+					exe "normal! a\<Cr>\<Esc>"
 				el
-					normal j0
+					normal! j0
 				en
-				normal >Gk$
+				normal! >Gk$
 				let l:level = l:level + 1
 			en
 		endwhile
@@ -1291,7 +1295,7 @@ function! s:XmlInstallDocumentation(full_name, revision)
             " Try a default configuration in user home:
             "let l:vim_doc_path = expand("~") . l:doc_home
             let l:vim_doc_path = matchstr(&rtp,
-                  \ escape($HOME, '\') .'[/\\]\%(\.vim\|vimfiles\)')
+                  \ escape($HOME, ' \') .'[/\\]\%(\.vim\|vimfiles\)')
             if (!(filewritable(l:vim_doc_path) == 2))
                 execute l:mkdir_cmd . l:vim_doc_path
                 if (!(filewritable(l:vim_doc_path) == 2))
@@ -1360,7 +1364,7 @@ function! s:XmlInstallDocumentation(full_name, revision)
     call append(line('$'), ' v' . 'im:tw=78:ts=8:fen:fdm=marker:ft=help:norl:')
 
     " Replace revision:
-    exe "normal :1,5s/#version#/ v" . a:revision . "/\<CR>"
+    exe "normal! :1,5s/#version#/ v" . a:revision . "/\<CR>"
 
     " Save the help document:
     exe 'w! ' . l:doc_file
