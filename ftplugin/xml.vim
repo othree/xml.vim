@@ -607,7 +607,7 @@ fun! s:CloseTagFun()
     normal! h
 		if s:TagUnderCursor()
 			if b:firstWasEndTag == 0
-        if b:did_indent == 1
+        if exists('b:did_indent') && b:did_indent == 1
           exe "normal! 2f>s\<Cr>\<Esc>Ox\<Esc>$x"
         else
           exe "normal! 2f>s\<Cr>\<Esc>Ox\<Esc>>>$x"
