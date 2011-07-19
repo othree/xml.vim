@@ -88,7 +88,8 @@ if ! exists("b:xmlPluginMappedKeys")
 endif
 
 let b:undo_ftplugin = "setlocal cms< isk<"
-  \ . "| unlet b:match_ignorecase b:match_words"
+  \ . "| if exists('b:match_ignorecase') | unlet b:match_ignorecase | endif"
+  \ . "| if exists('b:match_words') | unlet b:match_words | endif"
   \ . "| call <SNR>" . s:SID() . "_unmapKeys()"
   \ . "| unlet b:xmlPluginMappedKeys"
 
@@ -1226,7 +1227,7 @@ endfunction
 " unmapKeys()                         {{{1
 function! s:unmapKeys()
   for mapped in b:xmlPluginMappedKeys
-    execute mapped[0] . "unmap <buffer> " . mapped[1]
+    execute "silent! " . mapped[0] . "unmap <buffer> " . mapped[1]
   endfor
   let b:xmlPluginMappedKeys = []
 endfunction
