@@ -1335,7 +1335,7 @@ function! s:XmlInstallDocumentation(full_name, revision)
             \ '.\{-}\ze\%(\%(ft\)\=plugin\|macros\)') . l:doc_path
     if (!(filewritable(l:vim_doc_path) == 2))
         echomsg "Doc path: " . l:vim_doc_path
-        execute l:mkdir_cmd . l:vim_doc_path
+        execute l:mkdir_cmd . '"' . l:vim_doc_path . '"'
         if (!(filewritable(l:vim_doc_path) == 2))
             " Try a default configuration in user home:
             "let l:vim_doc_path = expand("~") . l:doc_home
