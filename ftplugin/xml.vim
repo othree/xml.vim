@@ -1318,11 +1318,13 @@ function! s:XmlInstallDocumentation(full_name, revision)
         " On UNIX like system, using forward slash:
         let l:slash_char = '/'
         let l:mkdir_cmd  = ':silent !mkdir -p '
+        let l:mkdir_cmd_quote = '"'
     else
         " On M$ system, use backslash. Also mkdir syntax is different.
         " This should only work on W2K and up.
         let l:slash_char = '\'
         let l:mkdir_cmd  = ':silent !mkdir '
+        let l:mkdir_cmd_quote = '"'
     endif
 
     let l:doc_path = l:slash_char . 'doc'
@@ -1335,7 +1337,7 @@ function! s:XmlInstallDocumentation(full_name, revision)
             \ '.\{-}\ze\%(\%(ft\)\=plugin\|macros\)') . l:doc_path
     if (!(filewritable(l:vim_doc_path) == 2))
         echomsg "Doc path: " . l:vim_doc_path
-        execute l:mkdir_cmd . l:vim_doc_path
+        execute l:mkdir_cmd . l:mkdir_cmd_quote . l:vim_doc_path . l:mkdir_cmd_quote
         if (!(filewritable(l:vim_doc_path) == 2))
             " Try a default configuration in user home:
             "let l:vim_doc_path = expand("~") . l:doc_home
