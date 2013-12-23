@@ -1631,7 +1631,7 @@ for details.
           <LocalLeader>]        Delete <!-- -->      delimiters
           <LocalLeader>}        Delete <!-- -->      section
           [[        Goto to the previous open tag 
-          [[        Goto to the next open tag 
+          ]]        Goto to the next open tag 
           []        Goto to the previous close tag 
           ][        Goto to the next  close tag 
           ["        Goto to the next  comment
