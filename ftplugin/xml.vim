@@ -32,7 +32,7 @@ endif
 let b:did_ftplugin = 1
 
 setlocal commentstring=<!--%s-->
-setlocal iskeyword=@,48-57,_,192-255,58
+setlocal iskeyword=@,48-57,_,192-255,58,-
 
 " XML:  thanks to Johannes Zellner and Akbar Ibrahim
 " - case sensitive
