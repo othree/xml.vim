@@ -613,6 +613,11 @@ if !exists('*s:CloseTagFun')
 fun! s:CloseTagFun()  
   let l:restore =  s:SavePos()
   let l:endOfLine = ((col('.')+1) == col('$'))
+  "Some plugin like delimitMate will auto insert the closing '>'
+  "Delete it if user input '>' again to trigger xml.vim
+  if col('.') > 1 && getline('.')[col('.')] == '>'
+    normal! d1l
+  en
   if col('.') > 1 && getline('.')[col('.')-2] == '>'
   "Multiline request. <t>></t> -->
   "<t>
