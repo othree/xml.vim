@@ -12,7 +12,7 @@ it adds:
  - fold tags, comments and Cdata 
  - add start tag
  - add end tags
- - add  tag around a visual blok or a tag,
+ - add  tag around a visual block or a tag,
  - join 2 adjacent same tags
  - delete tag
  - delete tag section
